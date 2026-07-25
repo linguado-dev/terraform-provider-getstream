@@ -44,11 +44,11 @@ import (
 
 func testAccSqsConfig(sqsUrl string, sqsAccessKey string, sqsSecretKey string) string {
 	return fmt.Sprintf(`
-provider "getstreamio" {
+provider "getstream" {
   api_key = "test"
   api_secret = "test"
 }
-resource "getstreamio_sqs" "test" {
+resource "getstream_sqs" "test" {
   sqs_url = %[1]q
   sqs_access_key = %[2]q
   sqs_secret_key = %[3]q
