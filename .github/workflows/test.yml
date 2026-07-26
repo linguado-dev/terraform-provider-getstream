@@ -20,14 +20,6 @@ on:
 permissions:
   contents: read
 
-# Acceptance tests do real CRUD against shared GetStream apps. Serialize workflow
-# runs so two runs never mutate the same app concurrently. Do NOT cancel in
-# progress: a cancelled acceptance run could leave a half-created channel type
-# behind (its CheckDestroy/cleanup would not execute).
-concurrency:
-  group: getstream-acc-${{ github.workflow }}
-  cancel-in-progress: false
-
 jobs:
   # Ensure the provider builds and vets cleanly before running any tests.
   build:
@@ -88,6 +80,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: dev
+    # Serialize acceptance runs against the shared dev app so two runs never
+    # mutate it concurrently. Job-level (not workflow-level) so the non-destructive
+    # build/unit/docs jobs still run in parallel across PRs. Do NOT cancel in
+    # progress: a cancelled run could leave a half-created channel type behind.
+    concurrency:
+      group: getstream-acc-dev
+      cancel-in-progress: false
     if: >-
       github.event_name != 'release' &&
       (github.event_name != 'pull_request' ||
@@ -130,6 +129,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: prod
+    # Serialize acceptance runs against the shared prod app (separate group from
+    # dev so the two never block each other).
+    concurrency:
+      group: getstream-acc-prod
+      cancel-in-progress: false
     if: github.event_name == 'release'
     steps:
       - uses: actions/checkout@v4
