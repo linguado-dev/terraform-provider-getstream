@@ -7,8 +7,8 @@ _Last updated: 2026-07-26. Working notes, not user-facing docs._
 credential/guard hardening, tests, CI, docs — all validated with **live acceptance
 tests (real CRUD) against the dev throwaway app**. See the detailed sections below.
 Local Go is now 1.26.5 — no Docker needed; use the `GNUmakefile` targets.
-- Env vars are `GETSTREAM_KEY` / `GETSTREAM_SECRET` / `GETSTREAM_APP_NAME` /
-  `GETSTREAM_APP_ID` (one word). Local creds live in a gitignored `.env` (copy from
+- Env vars are `STREAM_API_KEY` / `STREAM_API_SECRET` / `STREAM_APP_NAME` /
+  `STREAM_APP_ID` (one word). Local creds live in a gitignored `.env` (copy from
   `.env.template`); `TestMain` auto-loads it via godotenv (real env wins over `.env`).
 - Test tiers: `make test` (unit only, forces `TF_ACC=`), `make verify-creds`
   (non-destructive cred+guard check), `make testacc` (full live CRUD). `make check`

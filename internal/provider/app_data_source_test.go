@@ -11,7 +11,7 @@ import (
 
 // TestAccAppDataSource is a non-destructive credential check: it configures the
 // provider (which fails on invalid credentials) and reads the app identity back.
-// If GETSTREAM_APP_NAME is set, it asserts the resolved app name matches — so a
+// If STREAM_APP_NAME is set, it asserts the resolved app name matches — so a
 // green run proves the credentials are valid AND point at the expected app.
 func TestAccAppDataSource(t *testing.T) {
 	resource.Test(t, resource.TestCase{
@@ -31,7 +31,7 @@ data "getstream_app" "this" {}`,
 	})
 }
 
-// checkAppNameMatchesEnv asserts the data source's name equals GETSTREAM_APP_NAME
+// checkAppNameMatchesEnv asserts the data source's name equals STREAM_APP_NAME
 // when that variable is set (skipped otherwise).
 func checkAppNameMatchesEnv(s *terraform.State) error {
 	want := os.Getenv(envAppName)

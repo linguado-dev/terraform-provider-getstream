@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 
 	stream "github.com/GetStream/stream-chat-go/v6"
@@ -73,7 +72,7 @@ resource "getstream_channel_type" "test" {
 // testAccCheckChannelTypeDestroy verifies the channel type no longer exists after
 // the test tears down, using a client built from the same env credentials.
 func testAccCheckChannelTypeDestroy(s *terraform.State) error {
-	client, err := stream.NewClient(os.Getenv(envAPIKey), os.Getenv(envAPISecret))
+	client, err := stream.NewClient(firstEnv(envAPIKeyNames), firstEnv(envAPISecretNames))
 	if err != nil {
 		return fmt.Errorf("building verification client: %w", err)
 	}

@@ -10,8 +10,8 @@ cp .env.template .env      # fill in a THROWAWAY / dev app's key + secret
 set -a && source .env && set +a
 ```
 
-The four variables (`GETSTREAM_KEY`, `GETSTREAM_SECRET`, `GETSTREAM_APP_NAME`,
-`GETSTREAM_APP_ID`) are read by the provider directly, so a bare
+The four variables (`STREAM_API_KEY`, `STREAM_API_SECRET`, `STREAM_APP_NAME`,
+`STREAM_APP_ID`) are read by the provider directly, so a bare
 `provider "getstream" {}` block works. `app_name` activates the wrong-app guard.
 
 > ⚠️ Acceptance tests and `terraform apply` perform **destructive CRUD** (create +

@@ -114,10 +114,10 @@ jobs:
       - name: TF_ACC test (dev app)
         env:
           TF_ACC: "1"
-          GETSTREAM_KEY: ${{ secrets.GETSTREAM_KEY }}
-          GETSTREAM_SECRET: ${{ secrets.GETSTREAM_SECRET }}
-          GETSTREAM_APP_NAME: ${{ vars.GETSTREAM_APP_NAME }}
-          GETSTREAM_APP_ID: ${{ vars.GETSTREAM_APP_ID }}
+          STREAM_API_KEY: ${{ secrets.STREAM_API_KEY }}
+          STREAM_API_SECRET: ${{ secrets.STREAM_API_SECRET }}
+          STREAM_APP_NAME: ${{ vars.STREAM_APP_NAME }}
+          STREAM_APP_ID: ${{ vars.STREAM_APP_ID }}
         run: go test -v -cover ./internal/provider/
         timeout-minutes: 10
 
@@ -149,9 +149,9 @@ jobs:
       - name: TF_ACC test (prod app)
         env:
           TF_ACC: "1"
-          GETSTREAM_KEY: ${{ secrets.GETSTREAM_KEY }}
-          GETSTREAM_SECRET: ${{ secrets.GETSTREAM_SECRET }}
-          GETSTREAM_APP_NAME: ${{ vars.GETSTREAM_APP_NAME }}
-          GETSTREAM_APP_ID: ${{ vars.GETSTREAM_APP_ID }}
+          STREAM_API_KEY: ${{ secrets.STREAM_API_KEY }}
+          STREAM_API_SECRET: ${{ secrets.STREAM_API_SECRET }}
+          STREAM_APP_NAME: ${{ vars.STREAM_APP_NAME }}
+          STREAM_APP_ID: ${{ vars.STREAM_APP_ID }}
         run: go test -v -cover ./internal/provider/
         timeout-minutes: 10

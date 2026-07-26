@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	stream "github.com/GetStream/stream-chat-go/v6"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -16,12 +17,17 @@ import (
 )
 
 // Environment variables used as fallbacks for the provider credentials when the
-// corresponding configuration attributes are not set.
+// corresponding configuration attributes are not set. GetStream's public docs use
+// the STREAM_API_* names while its Go SDK (NewClientFromEnvVars) reads STREAM_KEY /
+// STREAM_SECRET, so both are accepted, docs name first.
+var (
+	envAPIKeyNames    = []string{"STREAM_API_KEY", "STREAM_KEY"}
+	envAPISecretNames = []string{"STREAM_API_SECRET", "STREAM_SECRET"}
+)
+
 const (
-	envAPIKey    = "GETSTREAM_KEY"
-	envAPISecret = "GETSTREAM_SECRET"
-	envAppName   = "GETSTREAM_APP_NAME"
-	envAppID     = "GETSTREAM_APP_ID"
+	envAppName = "STREAM_APP_NAME"
+	envAppID   = "STREAM_APP_ID"
 )
 
 // Ensure the provider fully satisfies the framework interfaces.
@@ -64,11 +70,11 @@ func (p *getstreamProvider) Schema(ctx context.Context, req provider.SchemaReque
 		MarkdownDescription: "Manage GetStream.io application configuration.",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
-				MarkdownDescription: "GetStream.io API key. May also be set via the `" + envAPIKey + "` environment variable.",
+				MarkdownDescription: "GetStream.io API key. May also be set via the `" + strings.Join(envAPIKeyNames, "` or `") + "` environment variable.",
 				Optional:            true,
 			},
 			"api_secret": schema.StringAttribute{
-				MarkdownDescription: "GetStream.io API secret. May also be set via the `" + envAPISecret + "` environment variable.",
+				MarkdownDescription: "GetStream.io API secret. May also be set via the `" + strings.Join(envAPISecretNames, "` or `") + "` environment variable.",
 				Optional:            true,
 				Sensitive:           true,
 			},
@@ -91,21 +97,21 @@ func (p *getstreamProvider) Configure(ctx context.Context, req provider.Configur
 		return
 	}
 
-	apiKey := firstNonEmpty(data.ApiKey, os.Getenv(envAPIKey))
-	apiSecret := firstNonEmpty(data.ApiSecret, os.Getenv(envAPISecret))
+	apiKey := firstNonEmpty(data.ApiKey, firstEnv(envAPIKeyNames))
+	apiSecret := firstNonEmpty(data.ApiSecret, firstEnv(envAPISecretNames))
 
 	if apiKey == "" {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("api_key"),
 			"Missing GetStream.io API key",
-			fmt.Sprintf("Set the api_key attribute or the %s environment variable.", envAPIKey),
+			fmt.Sprintf("Set the api_key attribute or one of these environment variables: %s.", strings.Join(envAPIKeyNames, ", ")),
 		)
 	}
 	if apiSecret == "" {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("api_secret"),
 			"Missing GetStream.io API secret",
-			fmt.Sprintf("Set the api_secret attribute or the %s environment variable.", envAPISecret),
+			fmt.Sprintf("Set the api_secret attribute or one of these environment variables: %s.", strings.Join(envAPISecretNames, ", ")),
 		)
 	}
 	if resp.Diagnostics.HasError() {
@@ -134,7 +140,7 @@ func (p *getstreamProvider) Configure(ctx context.Context, req provider.Configur
 	}
 
 	// Wrong-app guard: if the operator declared an expected app_name (via config
-	// or the GETSTREAM_APP_NAME env var), the credentials must resolve to an app
+	// or the STREAM_APP_NAME env var), the credentials must resolve to an app
 	// with that name.
 	if expected := firstNonEmpty(data.AppName, os.Getenv(envAppName)); expected != "" {
 		if pd.appName != expected {
@@ -178,4 +184,15 @@ func firstNonEmpty(v types.String, fallback string) string {
 		return v.ValueString()
 	}
 	return fallback
+}
+
+// firstEnv returns the value of the first set (non-empty) environment variable
+// among names, or "" if none are set.
+func firstEnv(names []string) string {
+	for _, n := range names {
+		if v := os.Getenv(n); v != "" {
+			return v
+		}
+	}
+	return ""
 }

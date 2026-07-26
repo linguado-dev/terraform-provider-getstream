@@ -12,8 +12,8 @@ Linguado runs three GetStream apps (per-env isolation):
 | qa   | 1699202 | `linguado-qa`  |
 | prod | 1407211 | `Linguado`     |
 
-Each env's backend gets its own `GETSTREAM_KEY` / `GETSTREAM_SECRET` (GitHub
-Environment secrets) + a `GETSTREAM_APP_ID` **variable** for documentation/cross-check.
+Each env's backend gets its own `STREAM_API_KEY` / `STREAM_API_SECRET` (GitHub
+Environment secrets) + a `STREAM_APP_ID` **variable** for documentation/cross-check.
 The footgun we want CI/Terraform to catch: **the prod key pasted into a non-prod env**
 (a leaked/mixed-up dev key that can actually reach prod chat data).
 
@@ -29,7 +29,7 @@ The footgun we want CI/Terraform to catch: **the prod key pasted into a non-prod
 ### Consequence for validation
 - **CI (linguado) workaround:** maintain a hardcoded `app_id → name` map, call
   `GET /app` with the env's key+secret, and assert the returned `.name` equals the
-  expected name for that env's `GETSTREAM_APP_ID`. Indirect (name proxy), but it
+  expected name for that env's `STREAM_APP_ID`. Indirect (name proxy), but it
   catches the prod-key-in-nonprod case. This is a stopgap.
 - **This provider is the right home for the real fix.** Because a `provider "getstream"`
   block is configured *with* `api_key`/`api_secret` **and** (ideally) an explicit

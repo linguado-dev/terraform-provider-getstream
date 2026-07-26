@@ -50,14 +50,14 @@ test:
 	TF_ACC= go test ./... $(TESTARGS)
 
 # Non-destructive credential check: configures the provider and reads the app
-# identity back, asserting it matches GETSTREAM_APP_NAME. Green => the key/secret
+# identity back, asserting it matches STREAM_APP_NAME. Green => the key/secret
 # are valid AND point at the expected app. Source .env first.
 .PHONY: verify-creds
 verify-creds:
 	TF_ACC=1 go test ./internal/provider/ -v -run TestAccAppDataSource
 
 # Acceptance tests — real CRUD against the app in your environment. Source a
-# .env (see .env.template) first, or export GETSTREAM_KEY/SECRET/APP_NAME/APP_ID.
+# .env (see .env.template) first, or export STREAM_API_KEY/SECRET/APP_NAME/APP_ID.
 .PHONY: testacc
 testacc:
 	TF_ACC=1 go test ./... -v $(TESTARGS) -timeout 120m

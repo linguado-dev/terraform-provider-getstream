@@ -56,9 +56,10 @@ func testAccPreCheck(t *testing.T) {
 	if os.Getenv("TF_ACC") == "" {
 		t.Skip("TF_ACC not set; skipping acceptance test")
 	}
-	for _, k := range []string{envAPIKey, envAPISecret} {
-		if os.Getenv(k) == "" {
-			t.Fatalf("%s must be set for acceptance tests", k)
-		}
+	if firstEnv(envAPIKeyNames) == "" {
+		t.Fatalf("one of %v must be set for acceptance tests", envAPIKeyNames)
+	}
+	if firstEnv(envAPISecretNames) == "" {
+		t.Fatalf("one of %v must be set for acceptance tests", envAPISecretNames)
 	}
 }
