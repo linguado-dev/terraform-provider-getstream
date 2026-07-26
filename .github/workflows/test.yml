@@ -78,15 +78,20 @@ jobs:
           cache: true
       - run: go test -v -cover ./internal/provider/
 
-  # Acceptance tests against the dev app. Runs on PRs and pushes to exercise the
-  # full CRUD lifecycle (create/update/import/delete) before merge.
+  # Acceptance tests against the dev app. Runs on same-repo PRs and pushes to
+  # exercise the full CRUD lifecycle (create/update/import/delete) before merge.
+  # Skipped on release (that's acc-prod) and on fork PRs, which don't receive the
+  # environment secrets and would otherwise fail testAccPreCheck.
   acc-dev:
     name: Acceptance (dev)
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: dev
-    if: github.event_name != 'release'
+    if: >-
+      github.event_name != 'release' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     strategy:
       fail-fast: false
       # Serialize the TF-version legs: they share one dev app and would otherwise

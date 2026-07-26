@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 
 	stream "github.com/GetStream/stream-chat-go/v6"
@@ -291,7 +292,15 @@ func applyModelToChannelType(ctx context.Context, data channelTypeResourceModel,
 		ct.MessageRetention = s
 	}
 	if !data.MaxMessageLength.IsNull() && !data.MaxMessageLength.IsUnknown() {
-		ct.MaxMessageLength = int(data.MaxMessageLength.ValueInt64())
+		v := data.MaxMessageLength.ValueInt64()
+		// ct.MaxMessageLength is an int, which is 32-bit on 386/arm builds; guard
+		// against overflow rather than silently truncating.
+		if v > math.MaxInt32 || v < math.MinInt32 {
+			diags.AddAttributeError(path.Root("max_message_length"), "Value out of range",
+				fmt.Sprintf("max_message_length must fit in a 32-bit integer, got: %d", v))
+		} else {
+			ct.MaxMessageLength = int(v)
+		}
 	}
 	if s, ok := knownString(data.Blocklist); ok {
 		ct.BlockList = s

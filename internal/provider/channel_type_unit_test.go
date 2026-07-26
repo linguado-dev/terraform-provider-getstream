@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"testing"
 
@@ -133,6 +134,19 @@ func TestApplyModelToChannelType_AppliesKnownValues(t *testing.T) {
 	}
 	if got := ct.Grants["admin"]; len(got) != 1 || got[0] != "create-channel" {
 		t.Errorf("Grants[admin] = %v, want [create-channel]", got)
+	}
+}
+
+func TestApplyModelToChannelType_MaxMessageLengthOverflow(t *testing.T) {
+	t.Parallel()
+	ct := stream.NewChannelType("messaging")
+	data := channelTypeResourceModel{
+		Name:             types.StringValue("messaging"),
+		MaxMessageLength: types.Int64Value(int64(math.MaxInt32) + 1),
+	}
+	diags := applyModelToChannelType(context.Background(), data, ct)
+	if !diags.HasError() {
+		t.Fatal("expected diagnostic for max_message_length exceeding 32-bit range")
 	}
 }
 
