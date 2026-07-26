@@ -126,8 +126,30 @@ real Stream **dev** app (see below) with `TF_ACC=1`.
   scratch config. (dev_overrides warns on `apply` and skips `init` — dev only.)
 
 ## Later milestones (see plan file)
-M2 `getstream_app_settings` (singleton; read-modify-write, nested objects **replace** not merge) · M3 data sources · M4 push_provider + role · M6 **publish to Terraform Registry** as `linguado-dev/getstream` (needs GPG-signed release tags + goreleaser + registry.terraform.io namespace registration → then linguado consumes via `required_providers { getstream = { source = "linguado-dev/getstream" } }`).
+Goal: real IaC for GetStream app/infra config (the upstream fork had one resource).
+- **M2 `getstream_app_settings`** (singleton; read-modify-write, nested objects
+  **replace** not merge).
+- **M3** more data sources · **M4** push_provider + role.
+- **Multi-region testing** (GitHub Project): a `base_url` attribute + `STREAM_CHAT_URL`
+  fallback + EU endpoint. Not needed now (Chat is single global endpoint).
+- **Account-tier resources** (create apps, rotate keys) — blocked on a non-interactive
+  account/personal token for the ampere API (see `APP_ID_FINDINGS.md`).
+
+**API discovery via HAR:** for anything the `stream-chat-go` SDK does not expose,
+ask the user to walk the relevant dashboard page and export a `.har`; reverse the
+endpoint + auth from it (that's how the account-tier app_id API was mapped). HARs
+carry live secrets — keep them gitignored (`*.har`), never commit.
+
+## ✅ Publish path (M6) — set up, ready to cut v0.1.0
+Registry namespace `linguado-dev` registered; GPG public key on file
+(`F0437DD4E05996F0`); `GPG_PRIVATE_KEY`/`PASSPHRASE` repo secrets set (passphrase in
+`pass` at `registry.terraform.io/publish/provider/github/linguado-dev/terraform-provider-getstream/admin@linguado.com`).
+`.goreleaser.yml` (v2 syntax) + `release.yml` (goreleaser-action@v6, crazy-max
+import-gpg@v6) validated with `goreleaser check`. Tag `v*` → signed release →
+registry ingests. Consume via `required_providers { getstream = { source = "linguado-dev/getstream" } }`.
 
 ## Housekeeping still open
-- README.md / docs/ / examples/ still say `getstreamio` / `talesporto` — update when convenient (not blocking).
-- `.github/` has no CI yet — add `go test` + `golangci-lint` + `tfplugindocs` workflow before/at publish.
+- README.md still says `getstreamio` / `talesporto` — update when convenient (not blocking).
+- Pre-existing `add-content-to-project.yml` workflow fails on every PR (targets
+  HashiCorp org project 99, fork-template leftover) — delete or repoint to a
+  linguado board. Not a merge gate.

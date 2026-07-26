@@ -12,8 +12,8 @@ import (
 
 // TestMain loads a local .env (if present) before running tests, so credentials
 // can be kept in a gitignored .env for local acceptance runs. It walks up from
-// the package directory to the repo root looking for the file, and uses Load
-// (not Overload) so real environment variables — e.g. CI secrets — always win.
+// the package directory only as far as the repository root, and uses Load (not
+// Overload) so real environment variables — e.g. CI secrets — always win.
 func TestMain(m *testing.M) {
 	loadDotEnv()
 	os.Exit(m.Run())
@@ -25,17 +25,26 @@ func loadDotEnv() {
 		return
 	}
 	for {
-		env := filepath.Join(dir, ".env")
-		if _, err := os.Stat(env); err == nil {
+		if env := filepath.Join(dir, ".env"); fileExists(env) {
 			_ = godotenv.Load(env)
+			return
+		}
+		// Stop at the repository root (dir containing go.mod or .git) so a stray
+		// .env in a parent directory (e.g. $HOME/.env) is never picked up.
+		if fileExists(filepath.Join(dir, "go.mod")) || fileExists(filepath.Join(dir, ".git")) {
 			return
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return // reached filesystem root
+			return // reached filesystem root without finding a repo root
 		}
 		dir = parent
 	}
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // testAccProtoV6ProviderFactories are used to instantiate a provider during
