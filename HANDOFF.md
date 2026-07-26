@@ -1,6 +1,28 @@
 # HANDOFF — linguado-dev/terraform-provider-getstream
 
-_Last updated: 2026-07-25 (end of session). Working notes, not user-facing docs._
+_Last updated: 2026-07-26. Working notes, not user-facing docs._
+
+## ✅ M1 shipped + tested live (this session, 2026-07-26)
+`getstream_channel_type` resource, `getstream_app` data source, provider
+credential/guard hardening, tests, CI, docs — all validated with **live acceptance
+tests (real CRUD) against the dev throwaway app**. See the detailed sections below.
+Local Go is now 1.26.5 — no Docker needed; use the `GNUmakefile` targets.
+- Env vars are `GETSTREAM_KEY` / `GETSTREAM_SECRET` / `GETSTREAM_APP_NAME` /
+  `GETSTREAM_APP_ID` (one word). Local creds live in a gitignored `.env` (copy from
+  `.env.template`); `TestMain` auto-loads it via godotenv (real env wins over `.env`).
+- Test tiers: `make test` (unit only, forces `TF_ACC=`), `make verify-creds`
+  (non-destructive cred+guard check), `make testacc` (full live CRUD). `make check`
+  = pre-PR gate (fmt/vet/build/unit).
+- **Two GitHub Environments** (`dev`, `prod`) hold the app secrets/variables. dev =
+  any branch (acc-dev runs on PRs); prod = protected + required reviewer
+  (nikolaus-linguado), acc-prod runs on release. CI: `.github/workflows/test.yml`
+  (build/generate/unit always; acc-dev on PR/push; acc-prod on release). `concurrency`
+  + `max-parallel:1` serialize CRUD against the shared apps.
+- **app_id guard reality** (see `APP_ID_FINDINGS.md`): numeric app_id only reachable
+  via account-tier "ampere" API with a dashboard session token (not CI-injectable),
+  so the provider verifies `app_name` (from `GetAppSettings`) instead. `app_id` is a
+  documented passthrough. Future: account-tier resources gated on an account token.
+
 
 ## What this repo is
 Hard fork (clean break) of the abandoned `talesporto/terraform-provider-getstreamio`,
@@ -32,13 +54,28 @@ dev/qa/prod. Full plan: `~/github.com/getstream-terraform-provider-plan.md`
   (caches are warm from this session.)
 - `go.mod`: `go 1.25.0`, framework `v1.19.0`, `stream-chat-go/v6 v6.0.0`.
 
-## ▶️ NEXT: M1 — `getstream_channel_type` (P0)
-Highest ROI: the GetStream audit found real dev↔prod drift (a `room_chat` channel
+## ✅ M1 — `getstream_channel_type` (compile gate green; live CRUD not yet run)
+Motivation: the GetStream audit found real dev↔prod drift (a `room_chat` channel
 type in prod but not dev). This resource makes channel types declarative.
 
-**Create `internal/provider/channel_type_resource.go`** copying the shape of
-`sqs_resource.go`. Register it in `provider.go` `Resources()` (add
-`NewChannelTypeResource`).
+Implemented `internal/provider/channel_type_resource.go` and registered
+`NewChannelTypeResource` in `provider.go`. `go build`/`vet`/`test`/`gofmt` all green
+in the golang:1.26 container. **Still TODO: real CRUD against a dev app (TF_ACC=1)
++ acceptance test + docs/example.** Implementation notes for whoever tests it:
+- `name` is `Required` + `RequiresReplace` (rename = destroy+create); import id = name.
+- All config fields are `Optional+Computed` + `UseStateForUnknown` so unset fields
+  take GetStream server defaults without perpetual diffs. **Verify this holds against
+  a live app** — if the API echoes back fields we didn't set differently than state,
+  revisit Computed vs Optional.
+- Create uses `stream.NewChannelType(name)` (seeds `DefaultChannelConfig`) then
+  overlays only known config values; Update sends a changed-fields `map` then
+  re-GETs (Update returns no body). Read 404 → `RemoveResource` via `isNotFound`
+  (`errors.As` on `stream.Error` value, `StatusCode == 404`).
+- **SDK gotcha:** `Automod`/`ModBehavior`/`BlockListBehavior` are unexported types
+  (`modType`/`modBehaviour`) — assign via exported constants (`stream.AutoModSimple`,
+  `stream.ModBehaviourFlag`, …) in Create; Update's map takes raw strings.
+
+### Original M1 spec (kept for reference)
 
 **SDK surface (verified this session, `GetStream/stream-chat-go/v6`):**
 ```go
