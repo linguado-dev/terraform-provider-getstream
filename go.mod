@@ -3,7 +3,7 @@ module github.com/linguado-dev/terraform-provider-getstream
 go 1.25.8
 
 require (
-	github.com/GetStream/stream-chat-go/v6 v6.0.0
+	github.com/GetStream/stream-chat-go/v6 v6.11.0
 	github.com/hashicorp/terraform-plugin-docs v0.13.0
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
 	github.com/hashicorp/terraform-plugin-go v0.31.0

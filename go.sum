@@ -2,8 +2,8 @@ cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMT
 dario.cat/mergo v1.0.0 h1:AGCNq9Evsj31mOgNPcLyXc+4PNABt905YmuqPYYpBWk=
 dario.cat/mergo v1.0.0/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/GetStream/stream-chat-go/v6 v6.0.0 h1:YNPvBaaqpwMs9ew2lP5/Sja59tRIsZGtbk8UvYxyOKI=
-github.com/GetStream/stream-chat-go/v6 v6.0.0/go.mod h1:FKdUg33+ZAJRFTnOTWLLqG7WQEs5wSrFpREFbkQV1I0=
+github.com/GetStream/stream-chat-go/v6 v6.11.0 h1:049gDfwtYH9nLqdEHkBOeIiixv5Dz481PhmMkdksNio=
+github.com/GetStream/stream-chat-go/v6 v6.11.0/go.mod h1:YohM2l9XL2zlBd5wsJxtxV2Fc2o32A+zTi3fbZxfXpY=
 github.com/Masterminds/goutils v1.1.0/go.mod h1:8cTjp+g8YejhMuvIA5y2vz3BpJxksy863GQaJW2MFNU=
 github.com/Masterminds/goutils v1.1.1 h1:5nUrii3FMTL5diU80unEVvNevw1nH4+ZV4DSLVJLSYI=
 github.com/Masterminds/goutils v1.1.1/go.mod h1:8cTjp+g8YejhMuvIA5y2vz3BpJxksy863GQaJW2MFNU=
