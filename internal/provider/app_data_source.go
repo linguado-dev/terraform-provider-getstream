@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	stream "github.com/GetStream/stream-chat-go/v6"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -21,7 +20,9 @@ func NewAppDataSource() datasource.DataSource {
 }
 
 type appDataSource struct {
-	client *stream.Client
+	// providerData carries the app identity resolved once during provider
+	// Configure, so the data source does not need another API round-trip.
+	pd *providerData
 }
 
 type appDataSourceModel struct {
@@ -63,23 +64,15 @@ func (d *appDataSource) Configure(ctx context.Context, req datasource.ConfigureR
 		)
 		return
 	}
-	d.client = pd.client
+	d.pd = pd
 }
 
 func (d *appDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	app, err := d.client.GetAppSettings(ctx)
-	if err != nil {
-		resp.Diagnostics.AddError("Error reading GetStream.io app settings", err.Error())
-		return
-	}
-	if app.App == nil {
-		resp.Diagnostics.AddError("Empty app settings response", "GetStream.io returned no app body.")
-		return
-	}
-
+	// The app identity was resolved during provider Configure (which calls
+	// GetAppSettings once); reuse it rather than making another API call.
 	data := appDataSourceModel{
-		Name:         types.StringValue(app.App.Name),
-		Organization: types.StringValue(app.App.OrganizationName),
+		Name:         types.StringValue(d.pd.appName),
+		Organization: types.StringValue(d.pd.appOrg),
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

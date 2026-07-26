@@ -297,40 +297,39 @@ func applyModelToChannelType(ctx context.Context, data channelTypeResourceModel,
 		ct.BlockList = s
 	}
 
-	// automod / behavior fields use unexported SDK types, so map the string to
-	// the exported constants.
+	// automod / behavior fields use unexported SDK types, so map the validated
+	// string to the exported constants. Validation is shared with Update via
+	// validateAutomod/validateBehavior so both paths reject bad input identically.
 	if s, ok := knownString(data.Automod); ok {
-		switch s {
-		case string(stream.AutoModDisabled):
-			ct.Automod = stream.AutoModDisabled
-		case string(stream.AutoModSimple):
-			ct.Automod = stream.AutoModSimple
-		case string(stream.AutoModAI):
-			ct.Automod = stream.AutoModAI
-		default:
-			diags.AddAttributeError(path.Root("automod"), "Invalid automod value",
-				fmt.Sprintf("automod must be one of %q, %q, or %q, got: %q",
-					stream.AutoModDisabled, stream.AutoModSimple, stream.AutoModAI, s))
+		if d := validateAutomod(s); d != nil {
+			diags.Append(d)
+		} else {
+			switch s {
+			case string(stream.AutoModDisabled):
+				ct.Automod = stream.AutoModDisabled
+			case string(stream.AutoModSimple):
+				ct.Automod = stream.AutoModSimple
+			case string(stream.AutoModAI):
+				ct.Automod = stream.AutoModAI
+			}
 		}
 	}
 	if s, ok := knownString(data.AutomodBehavior); ok {
-		switch s {
-		case string(stream.ModBehaviourFlag):
-			ct.ModBehavior = stream.ModBehaviourFlag
-		case string(stream.ModBehaviourBlock):
+		if d := validateBehavior(path.Root("automod_behavior"), s); d != nil {
+			diags.Append(d)
+		} else if s == string(stream.ModBehaviourBlock) {
 			ct.ModBehavior = stream.ModBehaviourBlock
-		default:
-			diags.Append(invalidBehaviorDiag(path.Root("automod_behavior"), s))
+		} else {
+			ct.ModBehavior = stream.ModBehaviourFlag
 		}
 	}
 	if s, ok := knownString(data.BlocklistBehavior); ok {
-		switch s {
-		case string(stream.ModBehaviourFlag):
-			ct.BlockListBehavior = stream.ModBehaviourFlag
-		case string(stream.ModBehaviourBlock):
+		if d := validateBehavior(path.Root("blocklist_behavior"), s); d != nil {
+			diags.Append(d)
+		} else if s == string(stream.ModBehaviourBlock) {
 			ct.BlockListBehavior = stream.ModBehaviourBlock
-		default:
-			diags.Append(invalidBehaviorDiag(path.Root("blocklist_behavior"), s))
+		} else {
+			ct.BlockListBehavior = stream.ModBehaviourFlag
 		}
 	}
 
@@ -382,16 +381,28 @@ func updateOptions(ctx context.Context, data channelTypeResourceModel) (map[stri
 		options["max_message_length"] = data.MaxMessageLength.ValueInt64()
 	}
 	if s, ok := knownString(data.Automod); ok {
-		options["automod"] = s
+		if d := validateAutomod(s); d != nil {
+			diags.Append(d)
+		} else {
+			options["automod"] = s
+		}
 	}
 	if s, ok := knownString(data.AutomodBehavior); ok {
-		options["automod_behavior"] = s
+		if d := validateBehavior(path.Root("automod_behavior"), s); d != nil {
+			diags.Append(d)
+		} else {
+			options["automod_behavior"] = s
+		}
 	}
 	if s, ok := knownString(data.Blocklist); ok {
 		options["blocklist"] = s
 	}
 	if s, ok := knownString(data.BlocklistBehavior); ok {
-		options["blocklist_behavior"] = s
+		if d := validateBehavior(path.Root("blocklist_behavior"), s); d != nil {
+			diags.Append(d)
+		} else {
+			options["blocklist_behavior"] = s
+		}
 	}
 	if !data.Commands.IsNull() && !data.Commands.IsUnknown() {
 		var names []string
@@ -459,6 +470,31 @@ func invalidBehaviorDiag(attr path.Path, s string) diag.Diagnostic {
 	return diag.NewAttributeErrorDiagnostic(attr, "Invalid behavior value",
 		fmt.Sprintf("value must be one of %q or %q, got: %q",
 			stream.ModBehaviourFlag, stream.ModBehaviourBlock, s))
+}
+
+// validateAutomod returns a diagnostic if s is not a recognized automod value,
+// or nil if it is valid. Used by both Create and Update so the two paths reject
+// bad input identically instead of one deferring to an API error.
+func validateAutomod(s string) diag.Diagnostic {
+	switch s {
+	case string(stream.AutoModDisabled), string(stream.AutoModSimple), string(stream.AutoModAI):
+		return nil
+	default:
+		return diag.NewAttributeErrorDiagnostic(path.Root("automod"), "Invalid automod value",
+			fmt.Sprintf("automod must be one of %q, %q, or %q, got: %q",
+				stream.AutoModDisabled, stream.AutoModSimple, stream.AutoModAI, s))
+	}
+}
+
+// validateBehavior returns a diagnostic if s is not a recognized flag/block
+// behavior value, or nil if it is valid.
+func validateBehavior(attr path.Path, s string) diag.Diagnostic {
+	switch s {
+	case string(stream.ModBehaviourFlag), string(stream.ModBehaviourBlock):
+		return nil
+	default:
+		return invalidBehaviorDiag(attr, s)
+	}
 }
 
 func knownString(v types.String) (string, bool) {

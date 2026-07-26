@@ -183,6 +183,29 @@ func TestUpdateOptions_OnlyKnownFields(t *testing.T) {
 	}
 }
 
+func TestUpdateOptions_InvalidEnumsError(t *testing.T) {
+	t.Parallel()
+	data := channelTypeResourceModel{
+		Name:              types.StringValue("messaging"),
+		Automod:           types.StringValue("bogus"),
+		AutomodBehavior:   types.StringValue("nope"),
+		BlocklistBehavior: types.StringValue("also-bad"),
+	}
+	opts, diags := updateOptions(context.Background(), data)
+	if !diags.HasError() {
+		t.Fatal("expected diagnostics for invalid enum values in updateOptions")
+	}
+	if diags.ErrorsCount() != 3 {
+		t.Errorf("expected 3 errors (automod + 2 behaviors), got %d: %v", diags.ErrorsCount(), diags)
+	}
+	// Invalid values must not be sent to the API.
+	for _, k := range []string{"automod", "automod_behavior", "blocklist_behavior"} {
+		if _, present := opts[k]; present {
+			t.Errorf("invalid %q leaked into update options", k)
+		}
+	}
+}
+
 // TestMapChannelTypeToModel_RoundTrip verifies the API->model hydration covers
 // every scalar plus commands/grants.
 func TestMapChannelTypeToModel_RoundTrip(t *testing.T) {

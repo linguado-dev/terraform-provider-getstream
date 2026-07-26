@@ -77,7 +77,7 @@ func (p *getstreamProvider) Schema(ctx context.Context, req provider.SchemaReque
 				Optional:            true,
 			},
 			"app_id": schema.StringAttribute{
-				MarkdownDescription: "Numeric GetStream.io app ID for documentation and cross-reference. The app-scoped API does not echo the app ID back, so this value is recorded but not currently verified against the credentials. May also be set via the `" + envAppID + "` environment variable.",
+				MarkdownDescription: "Numeric GetStream.io app ID, accepted for documentation and cross-reference in configuration. The app-scoped API does not expose the app ID, so this value is not verified against the credentials and is not persisted to state. Prefer `app_name` for the wrong-app guard. May also be set via the `" + envAppID + "` environment variable.",
 				Optional:            true,
 			},
 		},

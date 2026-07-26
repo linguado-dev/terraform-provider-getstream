@@ -54,26 +54,26 @@ dev/qa/prod. Full plan: `~/github.com/getstream-terraform-provider-plan.md`
   (caches are warm from this session.)
 - `go.mod`: `go 1.25.0`, framework `v1.19.0`, `stream-chat-go/v6 v6.0.0`.
 
-## ✅ M1 — `getstream_channel_type` (compile gate green; live CRUD not yet run)
+## ✅ M1 — `getstream_channel_type` (implemented + live-CRUD verified)
 Motivation: the GetStream audit found real dev↔prod drift (a `room_chat` channel
 type in prod but not dev). This resource makes channel types declarative.
 
 Implemented `internal/provider/channel_type_resource.go` and registered
-`NewChannelTypeResource` in `provider.go`. `go build`/`vet`/`test`/`gofmt` all green
-in the golang:1.26 container. **Still TODO: real CRUD against a dev app (TF_ACC=1)
-+ acceptance test + docs/example.** Implementation notes for whoever tests it:
-- `name` is `Required` + `RequiresReplace` (rename = destroy+create); import id = name.
+`NewChannelTypeResource` in `provider.go`. Unit tests + live acceptance tests
+(create/update/import/delete) pass against the dev throwaway app; the
+`Optional+Computed` defaults held (no perpetual diff). Implementation notes:
+- `name` is `Required` + `RequiresReplace` (rename = destroy+create); import id = name
+  (the resource has no `id` attr, so the acc test sets `ImportStateVerifyIdentifierAttribute: "name"`).
 - All config fields are `Optional+Computed` + `UseStateForUnknown` so unset fields
-  take GetStream server defaults without perpetual diffs. **Verify this holds against
-  a live app** — if the API echoes back fields we didn't set differently than state,
-  revisit Computed vs Optional.
+  take GetStream server defaults without perpetual diffs (verified live).
 - Create uses `stream.NewChannelType(name)` (seeds `DefaultChannelConfig`) then
   overlays only known config values; Update sends a changed-fields `map` then
   re-GETs (Update returns no body). Read 404 → `RemoveResource` via `isNotFound`
   (`errors.As` on `stream.Error` value, `StatusCode == 404`).
 - **SDK gotcha:** `Automod`/`ModBehavior`/`BlockListBehavior` are unexported types
   (`modType`/`modBehaviour`) — assign via exported constants (`stream.AutoModSimple`,
-  `stream.ModBehaviourFlag`, …) in Create; Update's map takes raw strings.
+  `stream.ModBehaviourFlag`, …) in Create; Update's map takes raw strings. Enum
+  validation is shared between Create and Update (`validateAutomod`/`validateBehavior`).
 
 ### Original M1 spec (kept for reference)
 

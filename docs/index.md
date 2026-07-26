@@ -35,5 +35,5 @@ provider "getstream" {
 
 - `api_key` (String) GetStream.io API key. May also be set via the `GETSTREAM_KEY` environment variable.
 - `api_secret` (String, Sensitive) GetStream.io API secret. May also be set via the `GETSTREAM_SECRET` environment variable.
-- `app_id` (String) Numeric GetStream.io app ID for documentation and cross-reference. The app-scoped API does not echo the app ID back, so this value is recorded but not currently verified against the credentials. May also be set via the `GETSTREAM_APP_ID` environment variable.
+- `app_id` (String) Numeric GetStream.io app ID, accepted for documentation and cross-reference in configuration. The app-scoped API does not expose the app ID, so this value is not verified against the credentials and is not persisted to state. Prefer `app_name` for the wrong-app guard. May also be set via the `GETSTREAM_APP_ID` environment variable.
 - `app_name` (String) Expected name of the GetStream.io app these credentials target. When set, the provider verifies the app the credentials resolve to has this name and fails otherwise. This guards against pointing an environment's Terraform at the wrong app (e.g. a prod key in a non-prod config). May also be set via the `GETSTREAM_APP_NAME` environment variable.

@@ -46,10 +46,16 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 	"getstream": providerserver.NewProtocol6WithError(New("test")()),
 }
 
-// testAccPreCheck asserts the credentials required for live acceptance tests are
+// testAccPreCheck asserts the environment required for live acceptance tests is
 // present. Acceptance tests perform real (destructive) CRUD against the app the
-// credentials resolve to, so they only run when TF_ACC and both credentials are set.
+// credentials resolve to. The terraform-plugin-testing harness already skips them
+// unless TF_ACC is set; this additionally requires both credentials and guards
+// against a bare `go test` with credentials in the environment silently running
+// destructive tests when TF_ACC was not intended.
 func testAccPreCheck(t *testing.T) {
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("TF_ACC not set; skipping acceptance test")
+	}
 	for _, k := range []string{envAPIKey, envAPISecret} {
 		if os.Getenv(k) == "" {
 			t.Fatalf("%s must be set for acceptance tests", k)
