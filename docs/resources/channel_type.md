@@ -72,5 +72,3 @@ resource "getstream_channel_type" "messaging" {
 - `typing_events` (Boolean) Whether typing indicator events are sent.
 - `uploads` (Boolean) Whether file uploads are enabled.
 - `url_enrichment` (Boolean) Whether URLs are enriched with previews.
-
-

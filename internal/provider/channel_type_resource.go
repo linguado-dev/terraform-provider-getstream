@@ -230,14 +230,13 @@ func (r *channelTypeResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	// UpdateChannelType returns no channel type body, so refresh from the API to
-	// capture server-computed values.
-	got, err := r.client.GetChannelType(ctx, data.Name.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Error reading channel type after update", err.Error())
-		return
-	}
-	resp.Diagnostics.Append(mapChannelTypeToModel(ctx, got.ChannelType, &data)...)
+	// Persist the plan directly rather than re-reading. GetStream's read-after-write
+	// is eventually consistent, so an immediate GetChannelType can return stale
+	// values and yield a "provider produced inconsistent result after apply" error.
+	// The plan already holds every value: config-set attributes are known, and
+	// computed attributes are carried from prior state via UseStateForUnknown; Update
+	// only mutates the fields in options, so the plan is the authoritative post-apply
+	// state.
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 

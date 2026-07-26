@@ -32,5 +32,3 @@ resource "getstream_sqs" "example" {
 ### Read-Only
 
 - `id` (String) Identifier.
-
-
