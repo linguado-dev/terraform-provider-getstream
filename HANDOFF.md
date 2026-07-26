@@ -1,6 +1,34 @@
 # HANDOFF — linguado-dev/terraform-provider-getstream
 
-_Last updated: 2026-07-25 (end of session). Working notes, not user-facing docs._
+_Last updated: 2026-07-26. Working notes, not user-facing docs._
+
+## ✅ M1 shipped + tested live (this session, 2026-07-26)
+`getstream_channel_type` resource, `getstream_app` data source, provider
+credential/guard hardening, tests, CI, docs — all validated with **live acceptance
+tests (real CRUD) against the dev throwaway app**. See the detailed sections below.
+Local Go is now 1.26.5 — no Docker needed; use the `GNUmakefile` targets.
+- Env vars are `STREAM_API_KEY` / `STREAM_API_SECRET` / `STREAM_APP_NAME` /
+  `STREAM_APP_ID` (one word). Local creds live in a gitignored `.env` (copy from
+  `.env.template`); `TestMain` auto-loads it via godotenv (real env wins over `.env`).
+- Test tiers: `make test` (unit only, forces `TF_ACC=`), `make verify-creds`
+  (non-destructive cred+guard check), `make testacc` (full live CRUD). `make check`
+  = pre-PR gate (fmt/vet/build/unit).
+- **Two GitHub Environments** (`dev`, `prod`) hold the app secrets/variables. dev =
+  any branch (acc-dev runs on PRs); prod = protected + required reviewer
+  (nikolaus-linguado), acc-prod runs on release. CI: `.github/workflows/test.yml`
+  (build/generate/unit always; acc-dev on PR/push; acc-prod on release). `concurrency`
+  + `max-parallel:1` serialize CRUD against the shared apps.
+- **app_id guard reality** (see `APP_ID_FINDINGS.md`): numeric app_id only reachable
+  via account-tier "ampere" API with a dashboard session token (not CI-injectable),
+  so the provider verifies `app_name` (from `GetAppSettings`) instead. `app_id` is a
+  documented passthrough. Future: account-tier resources gated on an account token.
+- **No `STREAM_API_REGION`**: the `stream-chat-go` v6 SDK reads `STREAM_KEY`/
+  `STREAM_SECRET`, `STREAM_CHAT_URL` (base-URL override) and `STREAM_CHAT_TIMEOUT`
+  — there is no region setting (Chat is a single global endpoint, routed by API
+  key). Region/EU-residency would be a `base_url`/`STREAM_CHAT_URL` attribute, not a
+  region string. **Future enhancement:** a GitHub Project for multi-region testing
+  (base_url attribute + EU endpoint) — not required now.
+
 
 ## What this repo is
 Hard fork (clean break) of the abandoned `talesporto/terraform-provider-getstreamio`,
@@ -32,13 +60,28 @@ dev/qa/prod. Full plan: `~/github.com/getstream-terraform-provider-plan.md`
   (caches are warm from this session.)
 - `go.mod`: `go 1.25.0`, framework `v1.19.0`, `stream-chat-go/v6 v6.0.0`.
 
-## ▶️ NEXT: M1 — `getstream_channel_type` (P0)
-Highest ROI: the GetStream audit found real dev↔prod drift (a `room_chat` channel
+## ✅ M1 — `getstream_channel_type` (implemented + live-CRUD verified)
+Motivation: the GetStream audit found real dev↔prod drift (a `room_chat` channel
 type in prod but not dev). This resource makes channel types declarative.
 
-**Create `internal/provider/channel_type_resource.go`** copying the shape of
-`sqs_resource.go`. Register it in `provider.go` `Resources()` (add
-`NewChannelTypeResource`).
+Implemented `internal/provider/channel_type_resource.go` and registered
+`NewChannelTypeResource` in `provider.go`. Unit tests + live acceptance tests
+(create/update/import/delete) pass against the dev throwaway app; the
+`Optional+Computed` defaults held (no perpetual diff). Implementation notes:
+- `name` is `Required` + `RequiresReplace` (rename = destroy+create); import id = name
+  (the resource has no `id` attr, so the acc test sets `ImportStateVerifyIdentifierAttribute: "name"`).
+- All config fields are `Optional+Computed` + `UseStateForUnknown` so unset fields
+  take GetStream server defaults without perpetual diffs (verified live).
+- Create uses `stream.NewChannelType(name)` (seeds `DefaultChannelConfig`) then
+  overlays only known config values; Update sends a changed-fields `map` then
+  re-GETs (Update returns no body). Read 404 → `RemoveResource` via `isNotFound`
+  (`errors.As` on `stream.Error` value, `StatusCode == 404`).
+- **SDK gotcha:** `Automod`/`ModBehavior`/`BlockListBehavior` are unexported types
+  (`modType`/`modBehaviour`) — assign via exported constants (`stream.AutoModSimple`,
+  `stream.ModBehaviourFlag`, …) in Create; Update's map takes raw strings. Enum
+  validation is shared between Create and Update (`validateAutomod`/`validateBehavior`).
+
+### Original M1 spec (kept for reference)
 
 **SDK surface (verified this session, `GetStream/stream-chat-go/v6`):**
 ```go
@@ -83,8 +126,30 @@ real Stream **dev** app (see below) with `TF_ACC=1`.
   scratch config. (dev_overrides warns on `apply` and skips `init` — dev only.)
 
 ## Later milestones (see plan file)
-M2 `getstream_app_settings` (singleton; read-modify-write, nested objects **replace** not merge) · M3 data sources · M4 push_provider + role · M6 **publish to Terraform Registry** as `linguado-dev/getstream` (needs GPG-signed release tags + goreleaser + registry.terraform.io namespace registration → then linguado consumes via `required_providers { getstream = { source = "linguado-dev/getstream" } }`).
+Goal: real IaC for GetStream app/infra config (the upstream fork had one resource).
+- **M2 `getstream_app_settings`** (singleton; read-modify-write, nested objects
+  **replace** not merge).
+- **M3** more data sources · **M4** push_provider + role.
+- **Multi-region testing** (GitHub Project): a `base_url` attribute + `STREAM_CHAT_URL`
+  fallback + EU endpoint. Not needed now (Chat is single global endpoint).
+- **Account-tier resources** (create apps, rotate keys) — blocked on a non-interactive
+  account/personal token for the ampere API (see `APP_ID_FINDINGS.md`).
+
+**API discovery via HAR:** for anything the `stream-chat-go` SDK does not expose,
+ask the user to walk the relevant dashboard page and export a `.har`; reverse the
+endpoint + auth from it (that's how the account-tier app_id API was mapped). HARs
+carry live secrets — keep them gitignored (`*.har`), never commit.
+
+## ✅ Publish path (M6) — set up, ready to cut v0.1.0
+Registry namespace `linguado-dev` registered; GPG public key on file
+(`F0437DD4E05996F0`); `GPG_PRIVATE_KEY`/`PASSPHRASE` repo secrets set (passphrase in
+`pass` at `registry.terraform.io/publish/provider/github/linguado-dev/terraform-provider-getstream/admin@linguado.com`).
+`.goreleaser.yml` (v2 syntax) + `release.yml` (goreleaser-action@v6, crazy-max
+import-gpg@v6) validated with `goreleaser check`. Tag `v*` → signed release →
+registry ingests. Consume via `required_providers { getstream = { source = "linguado-dev/getstream" } }`.
 
 ## Housekeeping still open
-- README.md / docs/ / examples/ still say `getstreamio` / `talesporto` — update when convenient (not blocking).
-- `.github/` has no CI yet — add `go test` + `golangci-lint` + `tfplugindocs` workflow before/at publish.
+- README.md still says `getstreamio` / `talesporto` — update when convenient (not blocking).
+- Pre-existing `add-content-to-project.yml` workflow fails on every PR (targets
+  HashiCorp org project 99, fork-template leftover) — delete or repoint to a
+  linguado board. Not a merge gate.

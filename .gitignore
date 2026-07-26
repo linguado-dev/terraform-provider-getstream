@@ -33,3 +33,11 @@ website/vendor
 
 # Keep windows files with windows line endings
 *.winfile eol=crlf
+
+# Never commit captured network traffic (contains live app secrets / tokens)
+*.har
+
+# Local testing credentials — only the .env.template (placeholders) is tracked
+.env
+.env.*
+!.env.template

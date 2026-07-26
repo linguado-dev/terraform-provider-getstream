@@ -1,8 +1,8 @@
 # Terraform Provider testing workflow.
 name: Tests
 
-# This GitHub action runs your tests for each pull request and push.
-# Optionally, you can turn it on using a schedule for regular testing.
+# Runs on PRs and pushes; the prod acceptance job additionally runs when a
+# release is published.
 on:
   pull_request:
     paths-ignore:
@@ -10,65 +10,148 @@ on:
   push:
     paths-ignore:
       - 'README.md'
+  release:
+    types: [published]
+  # Allow manually running the suite (e.g. to validate env secrets) from the
+  # Actions tab against the dev environment.
+  workflow_dispatch:
 
 # Testing only needs permissions to read the repository contents.
 permissions:
   contents: read
 
 jobs:
-  # Ensure project builds before running testing matrix
+  # Ensure the provider builds and vets cleanly before running any tests.
   build:
-    name: Build
+    name: Build & Vet
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
           cache: true
       - run: go mod download
-      - run: go build -v .
+      - run: go build -v ./...
+      - run: go vet ./...
 
+  # Verify docs are regenerated and committed (tfplugindocs).
   generate:
+    name: Docs up to date
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
           cache: true
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
       - run: go generate ./...
       - name: git diff
         run: |
           git diff --compact-summary --exit-code || \
-            (echo; echo "Unexpected difference in directories after code generation. Run 'go generate ./...' command and commit."; exit 1)
+            (echo; echo "Unexpected difference after code generation. Run 'go generate ./...' and commit."; exit 1)
 
-  # Run acceptance tests in a matrix with Terraform CLI versions
-  test:
-    name: Terraform Provider Acceptance Tests
+  # Unit tests need no credentials and run on every event.
+  unit:
+    name: Unit Tests
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        # list whatever Terraform versions here you would like to support
-        terraform:
-          - '1.0.*'
-          - '1.1.*'
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
           cache: true
-      - uses: hashicorp/setup-terraform@v2
+      - run: go test -v -cover ./internal/provider/
+
+  # Acceptance tests against the dev app. Runs on same-repo PRs and pushes to
+  # exercise the full CRUD lifecycle (create/update/import/delete) before merge.
+  # Skipped on release (that's acc-prod) and on fork PRs, which don't receive the
+  # environment secrets and would otherwise fail testAccPreCheck.
+  acc-dev:
+    name: Acceptance (dev)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: dev
+    # Serialize acceptance runs against the shared dev app so two runs never
+    # mutate it concurrently. Job-level (not workflow-level) so the non-destructive
+    # build/unit/docs jobs still run in parallel across PRs. Do NOT cancel in
+    # progress: a cancelled run could leave a half-created channel type behind.
+    concurrency:
+      group: getstream-acc-dev
+      cancel-in-progress: false
+    if: >-
+      github.event_name != 'release' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    strategy:
+      fail-fast: false
+      # Serialize the TF-version legs: they share one dev app and would otherwise
+      # create/delete the same-named channel type concurrently.
+      max-parallel: 1
+      matrix:
+        terraform:
+          - '1.9.*'
+          - '1.15.*'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
       - run: go mod download
-      - env:
+      - name: TF_ACC test (dev app)
+        env:
           TF_ACC: "1"
+          STREAM_API_KEY: ${{ secrets.STREAM_API_KEY }}
+          STREAM_API_SECRET: ${{ secrets.STREAM_API_SECRET }}
+          STREAM_APP_NAME: ${{ vars.STREAM_APP_NAME }}
+          STREAM_APP_ID: ${{ vars.STREAM_APP_ID }}
+        run: go test -v -cover ./internal/provider/
+        timeout-minutes: 10
+
+  # Acceptance tests against the prod app. Runs only on published releases; the
+  # prod environment's required-reviewer rule gates this job.
+  acc-prod:
+    name: Acceptance (prod)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: prod
+    # Serialize acceptance runs against the shared prod app (separate group from
+    # dev so the two never block each other).
+    concurrency:
+      group: getstream-acc-prod
+      cancel-in-progress: false
+    if: github.event_name == 'release'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.15.*'
+          terraform_wrapper: false
+      - run: go mod download
+      - name: TF_ACC test (prod app)
+        env:
+          TF_ACC: "1"
+          STREAM_API_KEY: ${{ secrets.STREAM_API_KEY }}
+          STREAM_API_SECRET: ${{ secrets.STREAM_API_SECRET }}
+          STREAM_APP_NAME: ${{ vars.STREAM_APP_NAME }}
+          STREAM_APP_ID: ${{ vars.STREAM_APP_ID }}
         run: go test -v -cover ./internal/provider/
         timeout-minutes: 10
