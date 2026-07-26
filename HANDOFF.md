@@ -22,6 +22,12 @@ Local Go is now 1.26.5 — no Docker needed; use the `GNUmakefile` targets.
   via account-tier "ampere" API with a dashboard session token (not CI-injectable),
   so the provider verifies `app_name` (from `GetAppSettings`) instead. `app_id` is a
   documented passthrough. Future: account-tier resources gated on an account token.
+- **No `STREAM_API_REGION`**: the `stream-chat-go` v6 SDK reads `STREAM_KEY`/
+  `STREAM_SECRET`, `STREAM_CHAT_URL` (base-URL override) and `STREAM_CHAT_TIMEOUT`
+  — there is no region setting (Chat is a single global endpoint, routed by API
+  key). Region/EU-residency would be a `base_url`/`STREAM_CHAT_URL` attribute, not a
+  region string. **Future enhancement:** a GitHub Project for multi-region testing
+  (base_url attribute + EU endpoint) — not required now.
 
 
 ## What this repo is
