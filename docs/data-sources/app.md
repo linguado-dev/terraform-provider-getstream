@@ -46,5 +46,3 @@ output "getstream_app_organization" {
 
 - `name` (String) Name of the app.
 - `organization` (String) Organization the app belongs to.
-
-
