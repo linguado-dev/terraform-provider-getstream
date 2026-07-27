@@ -3,8 +3,10 @@
 [![Registry](https://img.shields.io/badge/registry-linguado--dev%2Fgetstream-blueviolet)](https://registry.terraform.io/providers/linguado-dev/getstream/latest)
 
 Manage [GetStream.io](https://getstream.io) application configuration —
-channel types, app settings, and SQS event delivery — as
-infrastructure-as-code, with `terraform plan` drift detection.
+channel types, app settings, and SQS event delivery — as infrastructure-as-code.
+`getstream_channel_type` refreshes from the API on read for `terraform plan` drift
+detection; `getstream_sqs` cannot (GetStream does not return the SQS secret, so its
+state is kept as-is rather than refreshed).
 
 Published to the Terraform Registry as **`linguado-dev/getstream`**. This is a
 maintained hard fork of the abandoned `talesporto/terraform-provider-getstreamio`
