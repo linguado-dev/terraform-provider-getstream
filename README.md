@@ -45,11 +45,16 @@ data "getstream_app" "this" {}
 
 ### Authentication
 
-Credentials resolve in this order (first non-empty wins):
+The provider resolves each credential from its attribute first, then falls back to
+environment variables when the attribute is unset/empty:
 
 1. Provider `api_key` / `api_secret` attributes.
 2. `STREAM_API_KEY` / `STREAM_API_SECRET` env vars (or `STREAM_KEY` / `STREAM_SECRET`).
-3. Terraform input variables via `TF_VAR_` (see `examples/provider`).
+
+If you prefer Terraform input variables, wire them into the attributes yourself
+(`api_key = var.getstream_api_key`) and set them however Terraform supports,
+including `TF_VAR_getstream_api_key` — this feeds tier 1 above, it is not a separate
+provider mechanism. See `examples/provider`.
 
 The optional `app_name` attribute (or `STREAM_APP_NAME`) makes the provider verify
 the credentials resolve to an app with that name, guarding against pointing an
