@@ -160,8 +160,8 @@ func (p *getstreamProvider) Configure(ctx context.Context, req provider.Configur
 
 func (p *getstreamProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		NewSqsResource,
 		NewChannelTypeResource,
+		NewAppSettingsResource,
 	}
 }
 

@@ -3,10 +3,11 @@
 [![Registry](https://img.shields.io/badge/registry-linguado--dev%2Fgetstream-blueviolet)](https://registry.terraform.io/providers/linguado-dev/getstream/latest)
 
 Manage [GetStream.io](https://getstream.io) application configuration —
-channel types, app settings, and SQS event delivery — as infrastructure-as-code.
-`getstream_channel_type` refreshes from the API on read for `terraform plan` drift
-detection; `getstream_sqs` cannot (GetStream does not return the SQS secret, so its
-state is kept as-is rather than refreshed).
+channel types and app-level settings — as infrastructure-as-code.
+`getstream_channel_type` refreshes fully from the API on read for `terraform plan`
+drift detection. `getstream_app_settings` refreshes the fields you manage, but
+write-only secrets (`sqs_secret`, `sns_secret`) are never returned by the API, so
+they are kept from configuration rather than refreshed.
 
 Published to the Terraform Registry as **`linguado-dev/getstream`**. This is a
 maintained hard fork of the abandoned `talesporto/terraform-provider-getstreamio`
@@ -65,8 +66,12 @@ environment's Terraform at the wrong app.
 | Name | Kind | Description |
 |---|---|---|
 | `getstream_channel_type` | resource | Channel type + config (feature toggles, retention, automod, blocklist, commands, grants). Full CRUD + import. |
-| `getstream_sqs` | resource | SQS event-delivery link on the app. |
+| `getstream_app_settings` | resource | App-level settings singleton (`/api/v2/app`): SQS/SNS event delivery, webhooks, upload rules, moderation, behavior toggles. Manages the subset you declare. |
 | `getstream_app` | data source | App name + organization, for `precondition` assertions. |
+
+> **Note:** `getstream_app_settings` replaces the former `getstream_sqs` resource
+> (SQS is now `sqs_url`/`sqs_key`/`sqs_secret` on `getstream_app_settings`, since
+> both wrote the same `/api/v2/app` object).
 
 Full reference docs are on the
 [Terraform Registry](https://registry.terraform.io/providers/linguado-dev/getstream/latest/docs).
