@@ -2,6 +2,26 @@
 
 _Last updated: 2026-07-26. Working notes, not user-facing docs._
 
+## ✅ M2 — `getstream_app_settings` (this session; live-CRUD verified)
+Singleton resource for the whole `/api/v2/app` object (SQS/SNS, webhooks, upload
+rules, moderation, behavior toggles). **Replaced/removed `getstream_sqs`** — SQS is
+now `sqs_url/sqs_key/sqs_secret` on `app_settings` (both wrote the same object;
+keeping two resources would fight). Breaking change → next release is **v0.2.0**.
+Key modeling decisions (learned the hard way, live):
+- Fields are **Optional only, NOT Computed** — you manage the subset you declare;
+  unset stays null. (Computed on a partially-managed singleton → "unknown value
+  after apply" errors.)
+- **Read refreshes only fields already set (non-null) in state** — reading back the
+  whole object for unmanaged fields would show perpetual spurious drift.
+- **Write-only secrets** (`sqs_secret`, `sns_secret`, and any push provider secrets)
+  are never refreshed — the API doesn't return them; kept from config.
+- Create == Update (singleton always exists); Delete just drops from state. Import
+  sets only `id` (can't infer which fields you'll manage), so no ImportStateVerify.
+- **API note:** Stream's `/api/v2/*` is a normal REST API (channel_type = collection,
+  app = singleton). The dashboard's `POST /api/ampere/sdk/request` wrapper is just a
+  browser-auth proxy; our provider uses stream-chat-go against `/api/v2/*` directly
+  and never touches that wrapper.
+
 ## ✅ M1 shipped + tested live (this session, 2026-07-26)
 `getstream_channel_type` resource, `getstream_app` data source, provider
 credential/guard hardening, tests, CI, docs — all validated with **live acceptance
