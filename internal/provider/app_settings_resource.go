@@ -203,11 +203,12 @@ func (r *appSettingsResource) Update(ctx context.Context, req resource.UpdateReq
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// apply performs the read-modify-write against the app settings singleton. App
-// settings are a singleton that always exists, so Create and Update share this path.
-// It sets data.Id and, for fields the API echoes back, refreshes them from the
-// post-write response — but keeps write-only secrets from the plan (the API never
-// returns them, so re-reading would blank them and break drift detection).
+// apply writes the declared settings to the app settings singleton. App settings
+// always exist, so Create and Update share this path. It does NOT refresh from a
+// post-write read: UpdateAppSettings returns no settings body, GetStream's
+// read-after-write is eventually consistent, and secrets are never returned — so
+// the plan (all fields the caller declared) is persisted directly as the
+// authoritative post-apply state, and only data.Id is set here.
 func (r *appSettingsResource) apply(ctx context.Context, data *appSettingsResourceModel, diags *diag.Diagnostics) {
 	settings := &stream.AppSettings{}
 	diags.Append(modelToAppSettings(ctx, *data, settings)...)
@@ -221,9 +222,6 @@ func (r *appSettingsResource) apply(ctx context.Context, data *appSettingsResour
 		return
 	}
 	data.Id = types.StringValue(appSettingsID)
-	// The plan is the authoritative post-apply state (GetStream's read-after-write is
-	// eventually consistent, and secrets are never returned); the plan holds all
-	// known/config values and computed values carried via UseStateForUnknown.
 }
 
 func (r *appSettingsResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -256,8 +254,8 @@ func (r *appSettingsResource) ImportState(ctx context.Context, req resource.Impo
 // model <-> SDK mapping
 // ---------------------------------------------------------------------------
 
-func boolPtr(b bool) *bool      { return &b }
-func strPtrAS(s string) *string { return &s }
+func boolPtr(b bool) *bool       { return &b }
+func stringPtr(s string) *string { return &s }
 
 // modelToAppSettings copies known (config-set) attributes from the model onto a
 // *stream.AppSettings for the write. Unset (null/unknown) attributes are left off
@@ -266,26 +264,26 @@ func modelToAppSettings(ctx context.Context, data appSettingsResourceModel, s *s
 	var diags diag.Diagnostics
 
 	if v, ok := knownString(data.SqsURL); ok {
-		s.SqsURL = strPtrAS(v)
+		s.SqsURL = stringPtr(v)
 	}
 	if v, ok := knownString(data.SqsKey); ok {
-		s.SqsKey = strPtrAS(v)
+		s.SqsKey = stringPtr(v)
 	}
 	if v, ok := knownString(data.SqsSecret); ok {
-		s.SqsSecret = strPtrAS(v)
+		s.SqsSecret = stringPtr(v)
 	}
 	if v, ok := knownString(data.SnsTopicARN); ok {
-		s.SnsTopicArn = strPtrAS(v)
+		s.SnsTopicArn = stringPtr(v)
 	}
 	if v, ok := knownString(data.SnsKey); ok {
-		s.SnsKey = strPtrAS(v)
+		s.SnsKey = stringPtr(v)
 	}
 	if v, ok := knownString(data.SnsSecret); ok {
-		s.SnsSecret = strPtrAS(v)
+		s.SnsSecret = stringPtr(v)
 	}
 
 	if v, ok := knownString(data.WebhookURL); ok {
-		s.WebhookURL = strPtrAS(v)
+		s.WebhookURL = stringPtr(v)
 	}
 	if !data.WebhookEvents.IsNull() && !data.WebhookEvents.IsUnknown() {
 		var events []string
@@ -293,10 +291,10 @@ func modelToAppSettings(ctx context.Context, data appSettingsResourceModel, s *s
 		s.WebhookEvents = events
 	}
 	if v, ok := knownString(data.BeforeMessageSendHookURL); ok {
-		s.BeforeMessageSendHookURL = strPtrAS(v)
+		s.BeforeMessageSendHookURL = stringPtr(v)
 	}
 	if v, ok := knownString(data.CustomActionHandlerURL); ok {
-		s.CustomActionHandlerURL = strPtrAS(v)
+		s.CustomActionHandlerURL = stringPtr(v)
 	}
 
 	if cfg, d, ok := uploadConfigFromObject(ctx, data.FileUploadConfig); ok {
@@ -339,7 +337,7 @@ func modelToAppSettings(ctx context.Context, data appSettingsResourceModel, s *s
 		s.ChannelHideMembersOnly = boolPtr(data.ChannelHideMembersOnly.ValueBool())
 	}
 	if v, ok := knownString(data.PermissionVersion); ok {
-		s.PermissionVersion = strPtrAS(v)
+		s.PermissionVersion = stringPtr(v)
 	}
 
 	return diags

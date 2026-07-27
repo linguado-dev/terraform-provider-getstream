@@ -128,7 +128,7 @@ func TestPtrHelpers(t *testing.T) {
 	if stringFromPtr(nil).IsNull() != true {
 		t.Error("nil *string should map to null")
 	}
-	if got := stringFromPtr(strPtrAS("x")); got.ValueString() != "x" {
+	if got := stringFromPtr(stringPtr("x")); got.ValueString() != "x" {
 		t.Errorf("stringFromPtr = %q", got.ValueString())
 	}
 	if boolFromPtr(nil).IsNull() != true {
