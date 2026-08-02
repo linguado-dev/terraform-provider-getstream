@@ -2,6 +2,17 @@
 
 _Last updated: 2026-07-26. Working notes, not user-facing docs._
 
+## ✅ M3 — `getstream_command` (this session; live-CRUD verified)
+Custom chat slash-commands (a collection, like channel_type). Fields: `name` (id,
+RequiresReplace), `description`, `args`, `set`. CRUD via Create/Get/Update/Delete
+Command; 404→RemoveResource. Completes the `channel_type.commands` reference.
+Unit + full live acceptance (create/import/update/delete) green.
+**SDK note:** `stream-chat-go` is Chat-only — **no Video CallType support**. So
+`getstream_call_type` is NOT buildable from this SDK; it'd need Stream's Video API
+(different client/endpoints). Remaining chat collections available for future
+resources: `getstream_blocklist` (Create/Get/Update/List/Delete Blocklist) and
+`getstream_role` (Permissions() → PermissionClient: roles + permissions).
+
 ## ✅ M2 — `getstream_app_settings` (this session; live-CRUD verified)
 Singleton resource for the whole `/api/v2/app` object (SQS/SNS, webhooks, upload
 rules, moderation, behavior toggles). **Replaced/removed `getstream_sqs`** — SQS is
