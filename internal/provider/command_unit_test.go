@@ -1,18 +1,19 @@
 package provider
 
 import (
+	"encoding/json"
 	"testing"
 
 	stream "github.com/GetStream/stream-chat-go/v6"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func TestCommandFromModel_OnlyKnownFields(t *testing.T) {
+func TestCommandFromModel_UnsetFieldsAreEmpty(t *testing.T) {
 	t.Parallel()
 	data := commandResourceModel{
 		Name:        types.StringValue("giphy"),
 		Description: types.StringValue("Post a gif"),
-		// Args + Set null -> must remain empty on the request
+		// Args + Set null.
 	}
 	cmd := commandFromModel(data)
 	if cmd.Name != "giphy" {
@@ -21,8 +22,16 @@ func TestCommandFromModel_OnlyKnownFields(t *testing.T) {
 	if cmd.Description != "Post a gif" {
 		t.Errorf("Description = %q", cmd.Description)
 	}
-	if cmd.Args != "" || cmd.Set != "" {
-		t.Errorf("unset fields leaked: args=%q set=%q", cmd.Args, cmd.Set)
+	// stream.Command has no omitempty, so unset optional fields marshal as "".
+	// Assert against the actual JSON payload that gets sent to the API.
+	b, err := json.Marshal(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	want := `{"name":"giphy","description":"Post a gif","args":"","set":""}`
+	if got != want {
+		t.Errorf("payload = %s, want %s", got, want)
 	}
 }
 

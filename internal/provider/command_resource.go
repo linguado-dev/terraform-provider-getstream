@@ -176,6 +176,10 @@ func (r *commandResource) ImportState(ctx context.Context, req resource.ImportSt
 }
 
 // commandFromModel builds a *stream.Command from the model for Create/Update.
+// stream.Command's json tags have no omitempty, so unset optional fields are sent
+// as empty strings (the API accepts an empty description/args/set as "no value").
+// The Computed + UseStateForUnknown attributes then hold whatever the API echoes
+// back, so state stays consistent.
 func commandFromModel(data commandResourceModel) *stream.Command {
 	cmd := &stream.Command{Name: data.Name.ValueString()}
 	if s, ok := knownString(data.Description); ok {
