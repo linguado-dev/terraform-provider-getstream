@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"time"
 
 	stream "github.com/GetStream/stream-chat-go/v6"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -231,124 +230,14 @@ func (r *channelTypeResource) Update(ctx context.Context, req resource.UpdateReq
 		return
 	}
 
-	// GetStream's read-after-write is eventually consistent: a GET immediately after
-	// UpdateChannelType can still return the pre-update values. Persisting the plan
-	// as the post-apply state is correct, but a *subsequent* refresh (e.g. the very
-	// next `terraform plan`, or the acceptance framework's post-step refresh) could
-	// then read stale values and show a spurious diff. Wait for the write to
-	// propagate before returning so later reads are consistent.
-	r.waitForConsistentUpdate(ctx, data.Name.ValueString(), options)
-
-	// Persist the plan directly (not the re-read): the plan holds every value
-	// (config-set known; computed carried via UseStateForUnknown) and Update only
-	// mutates the fields in options, so it is the authoritative post-apply state.
+	// Persist the plan directly rather than re-reading. GetStream's read-after-write
+	// is eventually consistent, so an immediate GetChannelType can return stale
+	// values and yield a "provider produced inconsistent result after apply" error.
+	// The plan already holds every value: config-set attributes are known, and
+	// computed attributes are carried from prior state via UseStateForUnknown; Update
+	// only mutates the fields in options, so the plan is the authoritative post-apply
+	// state.
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-// waitForConsistentUpdate polls GetChannelType until every field we just wrote is
-// reflected in what the API returns (or a ~5s budget elapses), absorbing
-// GetStream's read-after-write lag. It is best-effort: on error or timeout it
-// simply returns, since Update already persists the authoritative plan to state —
-// the wait only prevents a subsequent refresh (next `terraform plan`, or the
-// acceptance framework's post-step refresh) from momentarily seeing stale values.
-func (r *channelTypeResource) waitForConsistentUpdate(ctx context.Context, name string, options map[string]interface{}) {
-	// Exponential backoff: 100,200,400,800,1600,1600ms ≈ 4.7s total.
-	delay := 100 * time.Millisecond
-	const maxDelay = 1600 * time.Millisecond
-	for attempt := 0; attempt < 6; attempt++ {
-		got, err := r.client.GetChannelType(ctx, name)
-		if err != nil || got.ChannelType == nil {
-			return
-		}
-		if channelTypeReflects(got.ChannelType, options) {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(delay):
-		}
-		if delay < maxDelay {
-			delay *= 2
-		}
-	}
-}
-
-// channelTypeReflects reports whether every field in options matches what the API
-// returned. Covers all scalar, list, and map keys that updateOptions can produce,
-// so the propagation wait only completes once the whole update is consistent.
-func channelTypeReflects(ct *stream.ChannelType, options map[string]interface{}) bool {
-	boolMatch := map[string]bool{
-		"typing_events": ct.TypingEvents, "read_events": ct.ReadEvents,
-		"connect_events": ct.ConnectEvents, "search": ct.Search,
-		"reactions": ct.Reactions, "reminders": ct.Reminders,
-		"replies": ct.Replies, "mutes": ct.Mutes,
-		"push_notifications": ct.PushNotifications, "uploads": ct.Uploads,
-		"url_enrichment": ct.URLEnrichment, "custom_events": ct.CustomEvents,
-	}
-	stringMatch := map[string]string{
-		"message_retention": ct.MessageRetention, "automod": string(ct.Automod),
-		"automod_behavior": string(ct.ModBehavior), "blocklist": ct.BlockList,
-		"blocklist_behavior": string(ct.BlockListBehavior),
-	}
-	for k, v := range options {
-		switch k {
-		case "max_message_length":
-			if int64(ct.MaxMessageLength) != v.(int64) {
-				return false
-			}
-		case "commands":
-			want, _ := v.([]string)
-			got := make([]string, 0, len(ct.Commands))
-			for _, c := range ct.Commands {
-				if c != nil {
-					got = append(got, c.Name)
-				}
-			}
-			if !equalStringSets(want, got) {
-				return false
-			}
-		case "grants":
-			want, _ := v.(map[string][]string)
-			if len(want) != len(ct.Grants) {
-				return false
-			}
-			for role, gs := range want {
-				if !equalStringSets(gs, ct.Grants[role]) {
-					return false
-				}
-			}
-		default:
-			if cur, ok := boolMatch[k]; ok {
-				if cur != v.(bool) {
-					return false
-				}
-			} else if cur, ok := stringMatch[k]; ok {
-				if cur != v.(string) {
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-// equalStringSets reports whether a and b contain the same elements (order-insensitive).
-func equalStringSets(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	counts := make(map[string]int, len(a))
-	for _, s := range a {
-		counts[s]++
-	}
-	for _, s := range b {
-		counts[s]--
-		if counts[s] < 0 {
-			return false
-		}
-	}
-	return true
 }
 
 func (r *channelTypeResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
