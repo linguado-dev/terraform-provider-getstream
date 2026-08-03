@@ -67,6 +67,7 @@ environment's Terraform at the wrong app.
 |---|---|---|
 | `getstream_channel_type` | resource | Channel type + config (feature toggles, retention, automod, blocklist, commands, grants). Full CRUD + import. |
 | `getstream_app_settings` | resource | App-level settings singleton (`/api/v2/app`): SQS/SNS event delivery, webhooks, upload rules, moderation, behavior toggles. Manages the subset you declare. |
+| `getstream_command` | resource | Custom chat slash-command (name, description, args, set). Referenced by name from `getstream_channel_type.commands`. Full CRUD + import. |
 | `getstream_app` | data source | App name + organization, for `precondition` assertions. |
 
 > **Note:** `getstream_app_settings` replaces the former `getstream_sqs` resource
