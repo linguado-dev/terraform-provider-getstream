@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	stream "github.com/GetStream/stream-chat-go/v6"
+
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -78,10 +80,14 @@ func TestProviderConfigure_OnlySecretMissingDefersOneError(t *testing.T) {
 }
 
 func TestProviderData_RequireClientPassesThroughWhenConfigured(t *testing.T) {
-	pd := &providerData{} // configured (client set by Configure in real runs): no diagnostic
+	sentinel := &stream.Client{} // never used for calls; identity is what we assert
+	pd := &providerData{client: sentinel}
 	called := false
-	_ = pd.requireClient(func(summary, detail string) { called = true })
+	got := pd.requireClient(func(summary, detail string) { called = true })
 	if called {
 		t.Fatal("configured provider must not emit deferred diagnostics")
+	}
+	if got != sentinel {
+		t.Fatalf("requireClient must return the configured client pointer; got %p want %p", got, sentinel)
 	}
 }
