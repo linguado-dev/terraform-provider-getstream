@@ -64,6 +64,9 @@ func (d *appDataSource) Configure(ctx context.Context, req datasource.ConfigureR
 		)
 		return
 	}
+	if pd.requireClient(resp.Diagnostics.AddError) == nil {
+		return
+	}
 	d.pd = pd
 }
 

@@ -93,7 +93,7 @@ func (r *commandResource) Configure(ctx context.Context, req resource.ConfigureR
 		)
 		return
 	}
-	r.client = pd.client
+	r.client = pd.requireClient(resp.Diagnostics.AddError)
 }
 
 func (r *commandResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {

@@ -6,13 +6,18 @@ import (
 	"testing"
 
 	stream "github.com/GetStream/stream-chat-go/v6"
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
-// acctestChannelTypeName is a fixed, provider-specific channel type name used by
-// the acceptance test. It is created and destroyed within the test.
-const acctestChannelTypeName = "tf_acctest_channel_type"
+// acctestChannelTypeName is the channel type the acceptance test creates and
+// destroys in the shared live dev app. It carries a per-process random suffix:
+// two acceptance runs (e.g. the 1.9.* and 1.15.* matrix legs, or a re-run
+// racing an in-flight run) used to collide on one fixed name ("already exists"
+// / "still exists after destroy"). Prefix stays provider-specific so a leaked
+// one is recognisable.
+var acctestChannelTypeName = "tf_acctest_ct_" + acctest.RandStringFromCharSet(8, acctest.CharSetAlpha)
 
 // TestAccChannelTypeResource exercises the full lifecycle (create, read, update,
 // import) against a live GetStream.io app. It runs only under TF_ACC with

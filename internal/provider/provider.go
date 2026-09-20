@@ -50,6 +50,43 @@ type providerData struct {
 	// sources can surface them without another API round-trip.
 	appName string
 	appOrg  string
+	// deferredErrors holds the "Missing GetStream.io API key/secret" diagnostics
+	// when the provider block was declared without credentials. Terraform
+	// configures every declared provider even if the environment manages zero
+	// GetStream resources (for_each = {}), so raising them in Configure would
+	// break the plan of an env that simply hasn't opted in yet (dev → qa → prod
+	// rollout). They are raised, verbatim, by the first resource or data source
+	// that actually needs the client.
+	deferredErrors []deferredError
+}
+
+type deferredError struct{ summary, detail string }
+
+func missingAPIKeyError() deferredError {
+	return deferredError{
+		"Missing GetStream.io API key",
+		fmt.Sprintf("Set the api_key attribute or one of these environment variables: %s.", strings.Join(envAPIKeyNames, ", ")),
+	}
+}
+
+func missingAPISecretError() deferredError {
+	return deferredError{
+		"Missing GetStream.io API secret",
+		fmt.Sprintf("Set the api_secret attribute or one of these environment variables: %s.", strings.Join(envAPISecretNames, ", ")),
+	}
+}
+
+// requireClient is called from every resource/data-source Configure: it raises
+// the deferred missing-credential diagnostics only when the client is actually
+// needed, and returns nil in that case.
+func (pd *providerData) requireClient(add func(summary, detail string)) *stream.Client {
+	if len(pd.deferredErrors) > 0 {
+		for _, e := range pd.deferredErrors {
+			add(e.summary, e.detail)
+		}
+		return nil
+	}
+	return pd.client
 }
 
 // providerModel maps the provider configuration schema.
@@ -100,21 +137,21 @@ func (p *getstreamProvider) Configure(ctx context.Context, req provider.Configur
 	apiKey := firstNonEmpty(data.ApiKey, firstEnv(envAPIKeyNames))
 	apiSecret := firstNonEmpty(data.ApiSecret, firstEnv(envAPISecretNames))
 
-	if apiKey == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("api_key"),
-			"Missing GetStream.io API key",
-			fmt.Sprintf("Set the api_key attribute or one of these environment variables: %s.", strings.Join(envAPIKeyNames, ", ")),
-		)
-	}
-	if apiSecret == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("api_secret"),
-			"Missing GetStream.io API secret",
-			fmt.Sprintf("Set the api_secret attribute or one of these environment variables: %s.", strings.Join(envAPISecretNames, ", ")),
-		)
-	}
-	if resp.Diagnostics.HasError() {
+	// Missing credentials are NOT a configure-time error: an environment may
+	// declare the provider while managing no GetStream resources yet. The exact
+	// same diagnostics are raised by the first resource/data source that needs
+	// the client (providerData.requireClient).
+	if apiKey == "" || apiSecret == "" {
+		pd := &providerData{}
+		if apiKey == "" {
+			pd.deferredErrors = append(pd.deferredErrors, missingAPIKeyError())
+		}
+		if apiSecret == "" {
+			pd.deferredErrors = append(pd.deferredErrors, missingAPISecretError())
+		}
+		tflog.Warn(ctx, "GetStream.io provider declared without credentials; deferring the error until a resource needs the client")
+		resp.ResourceData = pd
+		resp.DataSourceData = pd
 		return
 	}
 
