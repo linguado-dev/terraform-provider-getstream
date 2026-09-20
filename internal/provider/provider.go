@@ -50,21 +50,40 @@ type providerData struct {
 	// sources can surface them without another API round-trip.
 	appName string
 	appOrg  string
-	// unconfiguredReason is set when the provider block was declared without
-	// credentials. Terraform configures every declared provider even if the
-	// environment manages zero GetStream resources (for_each = {}), so a hard
-	// error here would break the plan of an env that simply hasn't opted in yet
-	// (dev → qa → prod rollout). The error is deferred to the first resource or
-	// data source that actually needs the client.
-	unconfiguredReason string
+	// deferredErrors holds the "Missing GetStream.io API key/secret" diagnostics
+	// when the provider block was declared without credentials. Terraform
+	// configures every declared provider even if the environment manages zero
+	// GetStream resources (for_each = {}), so raising them in Configure would
+	// break the plan of an env that simply hasn't opted in yet (dev → qa → prod
+	// rollout). They are raised, verbatim, by the first resource or data source
+	// that actually needs the client.
+	deferredErrors []deferredError
 }
 
-// requireClient is called from every resource/data-source Configure: it turns a
-// deferred "no credentials" state into a diagnostic only when the client is
-// actually needed.
+type deferredError struct{ summary, detail string }
+
+func missingAPIKeyError() deferredError {
+	return deferredError{
+		"Missing GetStream.io API key",
+		fmt.Sprintf("Set the api_key attribute or one of these environment variables: %s.", strings.Join(envAPIKeyNames, ", ")),
+	}
+}
+
+func missingAPISecretError() deferredError {
+	return deferredError{
+		"Missing GetStream.io API secret",
+		fmt.Sprintf("Set the api_secret attribute or one of these environment variables: %s.", strings.Join(envAPISecretNames, ", ")),
+	}
+}
+
+// requireClient is called from every resource/data-source Configure: it raises
+// the deferred missing-credential diagnostics only when the client is actually
+// needed, and returns nil in that case.
 func (pd *providerData) requireClient(add func(summary, detail string)) *stream.Client {
-	if pd.unconfiguredReason != "" {
-		add("GetStream.io provider is not configured", pd.unconfiguredReason)
+	if len(pd.deferredErrors) > 0 {
+		for _, e := range pd.deferredErrors {
+			add(e.summary, e.detail)
+		}
 		return nil
 	}
 	return pd.client
@@ -119,19 +138,18 @@ func (p *getstreamProvider) Configure(ctx context.Context, req provider.Configur
 	apiSecret := firstNonEmpty(data.ApiSecret, firstEnv(envAPISecretNames))
 
 	// Missing credentials are NOT a configure-time error: an environment may
-	// declare the provider while managing no GetStream resources yet. Defer the
-	// error to the first resource/data source that needs the client.
+	// declare the provider while managing no GetStream resources yet. The exact
+	// same diagnostics are raised by the first resource/data source that needs
+	// the client (providerData.requireClient).
 	if apiKey == "" || apiSecret == "" {
-		var missing []string
+		pd := &providerData{}
 		if apiKey == "" {
-			missing = append(missing, fmt.Sprintf("api_key (or env %s)", strings.Join(envAPIKeyNames, "/")))
+			pd.deferredErrors = append(pd.deferredErrors, missingAPIKeyError())
 		}
 		if apiSecret == "" {
-			missing = append(missing, fmt.Sprintf("api_secret (or env %s)", strings.Join(envAPISecretNames, "/")))
+			pd.deferredErrors = append(pd.deferredErrors, missingAPISecretError())
 		}
-		reason := fmt.Sprintf("Missing GetStream.io %s. The provider was declared without credentials; that is fine while this environment manages no GetStream resources, but a resource or data source now needs them.", strings.Join(missing, " and "))
 		tflog.Warn(ctx, "GetStream.io provider declared without credentials; deferring the error until a resource needs the client")
-		pd := &providerData{unconfiguredReason: reason}
 		resp.ResourceData = pd
 		resp.DataSourceData = pd
 		return
