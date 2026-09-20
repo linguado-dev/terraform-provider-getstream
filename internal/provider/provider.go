@@ -50,6 +50,24 @@ type providerData struct {
 	// sources can surface them without another API round-trip.
 	appName string
 	appOrg  string
+	// unconfiguredReason is set when the provider block was declared without
+	// credentials. Terraform configures every declared provider even if the
+	// environment manages zero GetStream resources (for_each = {}), so a hard
+	// error here would break the plan of an env that simply hasn't opted in yet
+	// (dev → qa → prod rollout). The error is deferred to the first resource or
+	// data source that actually needs the client.
+	unconfiguredReason string
+}
+
+// requireClient is called from every resource/data-source Configure: it turns a
+// deferred "no credentials" state into a diagnostic only when the client is
+// actually needed.
+func (pd *providerData) requireClient(add func(summary, detail string)) *stream.Client {
+	if pd.unconfiguredReason != "" {
+		add("GetStream.io provider is not configured", pd.unconfiguredReason)
+		return nil
+	}
+	return pd.client
 }
 
 // providerModel maps the provider configuration schema.
@@ -100,21 +118,22 @@ func (p *getstreamProvider) Configure(ctx context.Context, req provider.Configur
 	apiKey := firstNonEmpty(data.ApiKey, firstEnv(envAPIKeyNames))
 	apiSecret := firstNonEmpty(data.ApiSecret, firstEnv(envAPISecretNames))
 
-	if apiKey == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("api_key"),
-			"Missing GetStream.io API key",
-			fmt.Sprintf("Set the api_key attribute or one of these environment variables: %s.", strings.Join(envAPIKeyNames, ", ")),
-		)
-	}
-	if apiSecret == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("api_secret"),
-			"Missing GetStream.io API secret",
-			fmt.Sprintf("Set the api_secret attribute or one of these environment variables: %s.", strings.Join(envAPISecretNames, ", ")),
-		)
-	}
-	if resp.Diagnostics.HasError() {
+	// Missing credentials are NOT a configure-time error: an environment may
+	// declare the provider while managing no GetStream resources yet. Defer the
+	// error to the first resource/data source that needs the client.
+	if apiKey == "" || apiSecret == "" {
+		var missing []string
+		if apiKey == "" {
+			missing = append(missing, fmt.Sprintf("api_key (or env %s)", strings.Join(envAPIKeyNames, "/")))
+		}
+		if apiSecret == "" {
+			missing = append(missing, fmt.Sprintf("api_secret (or env %s)", strings.Join(envAPISecretNames, "/")))
+		}
+		reason := fmt.Sprintf("Missing GetStream.io %s. The provider was declared without credentials; that is fine while this environment manages no GetStream resources, but a resource or data source now needs them.", strings.Join(missing, " and "))
+		tflog.Warn(ctx, "GetStream.io provider declared without credentials; deferring the error until a resource needs the client")
+		pd := &providerData{unconfiguredReason: reason}
+		resp.ResourceData = pd
+		resp.DataSourceData = pd
 		return
 	}
 

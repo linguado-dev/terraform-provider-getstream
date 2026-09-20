@@ -161,7 +161,7 @@ func (r *channelTypeResource) Configure(ctx context.Context, req resource.Config
 		)
 		return
 	}
-	r.client = pd.client
+	r.client = pd.requireClient(resp.Diagnostics.AddError)
 }
 
 func (r *channelTypeResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
