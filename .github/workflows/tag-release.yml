@@ -1,0 +1,52 @@
+# Cuts the v* tag for CHANGELOG.md's top "## x.y.z" heading on merge to main (#20).
+# The tag is pushed as the linguado-release-automation App, so its push starts release.yml
+# (a GITHUB_TOKEN push would not) and the v* tag ruleset admits it.
+name: Tag release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Pick tag
+        id: pick
+        run: echo "tag=$(make -s release-tag)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate GitHub App token
+        if: steps.pick.outputs.tag != ''
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: Iv23lix1Rhfgu21saA2c # linguado-release-automation's client ID; public, not a secret
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: terraform-provider-getstream
+          permission-contents: write
+
+      - name: Push tag
+        if: steps.pick.outputs.tag != ''
+        env:
+          TAG: ${{ steps.pick.outputs.tag }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config user.name "linguado-release-automation[bot]"
+          git config user.email "linguado-release-automation[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG" "$GITHUB_SHA"
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"
+          echo "Tagged \`$TAG\` at \`${GITHUB_SHA:0:8}\`; release.yml publishes it." >> "$GITHUB_STEP_SUMMARY"
