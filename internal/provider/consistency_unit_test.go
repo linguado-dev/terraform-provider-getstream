@@ -164,6 +164,19 @@ func TestPollConsistent_APIErrorAtDeadlineIsReturned(t *testing.T) {
 	}
 }
 
+func TestPollConsistent_BudgetSpentInBackoffKeepsNotFound(t *testing.T) {
+	fastPolling(t)
+	read := func(ctx context.Context) (int, error) {
+		if ctx.Err() != nil {
+			return 0, fmt.Errorf("get: %w", ctx.Err()) // a GET started after the budget
+		}
+		return 0, stream.Error{StatusCode: http.StatusNotFound}
+	}
+	if _, err := pollConsistent(context.Background(), read, func(int) bool { return false }); !isNotFound(err) {
+		t.Fatalf("err = %v, want not-found: every completed read said so", err)
+	}
+}
+
 func TestPollConsistent_CancelIsAnError(t *testing.T) {
 	fastPolling(t)
 	ctx, cancel := context.WithCancel(context.Background())

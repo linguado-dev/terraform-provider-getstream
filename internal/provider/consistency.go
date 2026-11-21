@@ -122,6 +122,9 @@ func pollConsistent[T any](ctx context.Context, read func(context.Context) (T, e
 			return zero, ctx.Err()
 		case <-time.After(min(wait, left)):
 		}
+		if pctx.Err() != nil {
+			break // budget spent while waiting: report what the completed reads saw
+		}
 		wait = min(wait*2, consistencyMaxWait)
 	}
 	if seenOK {
