@@ -127,8 +127,22 @@ func pollConsistent[T any](ctx context.Context, read func(context.Context) (T, e
 		}
 		wait = min(wait*2, consistencyMaxWait)
 	}
+	if err := callerDone(ctx); err != nil {
+		return zero, err // the caller gave up; don't pass off a stored read as the answer
+	}
 	if seenOK {
 		return okVal, nil
 	}
 	return zero, lastErr
+}
+
+// callerDone is ctx.Err(), plus a deadline already past whose timer hasn't fired yet.
+func callerDone(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if d, ok := ctx.Deadline(); ok && !time.Now().Before(d) {
+		return context.DeadlineExceeded
+	}
+	return nil
 }

@@ -177,6 +177,18 @@ func TestPollConsistent_BudgetSpentInBackoffKeepsNotFound(t *testing.T) {
 	}
 }
 
+func TestPollConsistent_CallerDeadlineInBackoffIsAnError(t *testing.T) {
+	fastPolling(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	read := func(context.Context) (int, error) {
+		return 0, stream.Error{StatusCode: http.StatusNotFound} // a lagging 404 that must not drop the resource
+	}
+	if _, err := pollConsistent(ctx, read, func(int) bool { return false }); !errors.Is(err, context.DeadlineExceeded) || isNotFound(err) {
+		t.Fatalf("err = %v, want the caller's deadline", err)
+	}
+}
+
 func TestPollConsistent_CancelIsAnError(t *testing.T) {
 	fastPolling(t)
 	ctx, cancel := context.WithCancel(context.Background())
