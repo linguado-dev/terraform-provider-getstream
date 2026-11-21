@@ -27,7 +27,9 @@ jobs:
 
       - name: Pick tag
         id: pick
-        run: echo "tag=$(make -s release-tag)" >> "$GITHUB_OUTPUT"
+        run: |
+          tag="$(make -s release-tag)"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
       - name: Generate GitHub App token
         if: steps.pick.outputs.tag != ''
