@@ -49,6 +49,9 @@ func TestRecentWrite(t *testing.T) {
 	if _, ok := recentWrite(ctx, p, now.Add(consistencyWindow+time.Second)); ok {
 		t.Fatal("a read after the window must be single-shot")
 	}
+	if _, ok := recentWrite(ctx, p, now.Add(-time.Hour)); ok {
+		t.Fatal("a record from the future (clock skew) must not keep the window open")
+	}
 	p[lastWriteKey] = []byte("not json")
 	if _, ok := recentWrite(ctx, p, now); ok {
 		t.Fatal("a corrupt record must not poll")

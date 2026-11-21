@@ -61,7 +61,8 @@ func recentWrite(ctx context.Context, p privateState, now time.Time) (string, bo
 	if json.Unmarshal(b, &lw) != nil || lw.Unix == 0 || lw.Want == "" {
 		return "", false
 	}
-	return lw.Want, now.Sub(time.Unix(lw.Unix, 0)) < consistencyWindow
+	age := now.Sub(time.Unix(lw.Unix, 0))
+	return lw.Want, age >= -time.Minute && age < consistencyWindow // allow a little clock skew
 }
 
 // fingerprint hashes attribute values into a short, order-stable string.
@@ -112,13 +113,14 @@ func pollConsistent[T any](ctx context.Context, read func(context.Context) (T, e
 		}
 
 		deadline, _ := pctx.Deadline()
-		if time.Now().Add(wait).After(deadline) {
+		left := time.Until(deadline)
+		if left <= 0 {
 			break
 		}
 		select {
 		case <-ctx.Done():
 			return zero, ctx.Err()
-		case <-time.After(wait):
+		case <-time.After(min(wait, left)):
 		}
 		wait = min(wait*2, consistencyMaxWait)
 	}
