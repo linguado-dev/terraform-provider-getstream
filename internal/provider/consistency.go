@@ -2,16 +2,20 @@ package provider
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// GetStream's reads lag its writes (#17). Create and Update stamp the write time in
-// private state; a Read inside consistencyWindow of that stamp polls until the API
-// agrees with state. Later reads are single-shot, so real drift is never delayed.
+// GetStream's reads lag its writes (#17). Create and Update record the write time and a
+// fingerprint of what they wrote in private state; a Read inside consistencyWindow polls
+// until the API returns that fingerprint. Later reads are single-shot, so drift isn't delayed.
 var (
 	consistencyWindow  = 2 * time.Minute
 	consistencyBudget  = 15 * time.Second
@@ -28,54 +32,99 @@ type privateState interface {
 }
 
 type lastWrite struct {
-	Unix int64 `json:"t"`
+	Unix int64  `json:"t"`
+	Want string `json:"want"`
 }
 
-// markWritten stamps the write time. Best effort: without the stamp, Read just doesn't poll.
-func markWritten(ctx context.Context, p privateState, now time.Time) {
+// markWritten records the write. Best effort: without the record, Read just doesn't poll.
+func markWritten(ctx context.Context, p privateState, now time.Time, want string) {
 	if p == nil {
 		return
 	}
-	b, _ := json.Marshal(lastWrite{Unix: now.Unix()})
+	b, _ := json.Marshal(lastWrite{Unix: now.Unix(), Want: want})
 	if d := p.SetKey(ctx, lastWriteKey, b); d.HasError() {
 		tflog.Debug(ctx, "could not record last write in private state", map[string]any{"diagnostics": d})
 	}
 }
 
-// recentlyWritten reports whether this provider wrote the resource within consistencyWindow.
-func recentlyWritten(ctx context.Context, p privateState, now time.Time) bool {
+// recentWrite returns the fingerprint of our last write if it is inside consistencyWindow.
+func recentWrite(ctx context.Context, p privateState, now time.Time) (string, bool) {
 	if p == nil {
-		return false
+		return "", false
 	}
 	b, d := p.GetKey(ctx, lastWriteKey)
 	if d.HasError() || len(b) == 0 {
-		return false
+		return "", false
 	}
 	var lw lastWrite
-	if json.Unmarshal(b, &lw) != nil || lw.Unix == 0 {
-		return false
+	if json.Unmarshal(b, &lw) != nil || lw.Unix == 0 || lw.Want == "" {
+		return "", false
 	}
-	return now.Sub(time.Unix(lw.Unix, 0)) < consistencyWindow
+	return lw.Want, now.Sub(time.Unix(lw.Unix, 0)) < consistencyWindow
 }
 
-// pollConsistent calls read until accept returns true or the budget runs out, and
-// returns the last result. A not-found error is retried like a stale value.
-func pollConsistent[T any](ctx context.Context, read func() (T, error), accept func(T) bool) (T, error) {
-	deadline := time.Now().Add(consistencyBudget)
+// fingerprint hashes attribute values into a short, order-stable string.
+func fingerprint(vals ...attr.Value) string {
+	h := sha256.New()
+	for _, v := range vals {
+		fmt.Fprintf(h, "%s\x00", v.String())
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// pollConsistent calls read until accept returns true or consistencyBudget runs out;
+// each read is bounded by the budget too. A not-found is retried like a stale value. On
+// exhaustion it returns the latest successful read if there was one, else the last error.
+// Cancellation of ctx is returned as an error, never as a read result.
+func pollConsistent[T any](ctx context.Context, read func(context.Context) (T, error), accept func(T) bool) (T, error) {
+	var zero T
+	pctx, cancel := context.WithTimeout(ctx, consistencyBudget)
+	defer cancel()
+
+	var (
+		seenOK  bool
+		okVal   T
+		lastErr error
+	)
 	wait := consistencyBackoff
 	for {
-		v, err := read()
-		if (err == nil && accept(v)) || (err != nil && !isNotFound(err)) {
-			return v, err
+		v, err := read(pctx)
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
 		}
+		switch {
+		case pctx.Err() != nil && err != nil:
+			// This read was cut by the budget; fall back to what earlier reads saw.
+			if seenOK {
+				return okVal, nil
+			}
+			if lastErr != nil {
+				return zero, lastErr
+			}
+			return zero, err
+		case err == nil && accept(v):
+			return v, nil
+		case err == nil:
+			seenOK, okVal = true, v
+		case !isNotFound(err):
+			return zero, err
+		default:
+			lastErr = err
+		}
+
+		deadline, _ := pctx.Deadline()
 		if time.Now().Add(wait).After(deadline) {
-			return v, err
+			break
 		}
 		select {
 		case <-ctx.Done():
-			return v, err
+			return zero, ctx.Err()
 		case <-time.After(wait):
 		}
 		wait = min(wait*2, consistencyMaxWait)
 	}
+	if seenOK {
+		return okVal, nil
+	}
+	return zero, lastErr
 }

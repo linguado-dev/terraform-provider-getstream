@@ -30,27 +30,27 @@ func fastPolling(t *testing.T) {
 	t.Cleanup(func() { consistencyBudget, consistencyBackoff, consistencyMaxWait = b, w, m })
 }
 
-func TestRecentlyWritten(t *testing.T) {
+func TestRecentWrite(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	p := fakePrivate{}
 
-	if recentlyWritten(ctx, p, now) {
-		t.Fatal("no stamp (e.g. after import) must not poll")
+	if _, ok := recentWrite(ctx, p, now); ok {
+		t.Fatal("no record (e.g. after import) must not poll")
 	}
-	if recentlyWritten(ctx, nil, now) {
+	if _, ok := recentWrite(ctx, nil, now); ok {
 		t.Fatal("nil private state must not poll")
 	}
-	markWritten(ctx, p, now)
-	if !recentlyWritten(ctx, p, now.Add(time.Second)) {
-		t.Fatal("a read right after our write must poll")
+	markWritten(ctx, p, now, "fp")
+	if want, ok := recentWrite(ctx, p, now.Add(time.Second)); !ok || want != "fp" {
+		t.Fatalf("a read right after our write must poll for our fingerprint, got (%q, %v)", want, ok)
 	}
-	if recentlyWritten(ctx, p, now.Add(consistencyWindow+time.Second)) {
+	if _, ok := recentWrite(ctx, p, now.Add(consistencyWindow+time.Second)); ok {
 		t.Fatal("a read after the window must be single-shot")
 	}
 	p[lastWriteKey] = []byte("not json")
-	if recentlyWritten(ctx, p, now) {
-		t.Fatal("a corrupt stamp must not poll")
+	if _, ok := recentWrite(ctx, p, now); ok {
+		t.Fatal("a corrupt record must not poll")
 	}
 }
 
@@ -73,11 +73,12 @@ func TestPollConsistent(t *testing.T) {
 		{"other error is not retried", []any{fatal}, 0, fatal, 1},
 		{"stale forever returns last read", []any{1}, 1, nil, 0},
 		{"not found forever returns not found", []any{notFound}, 0, notFound, 0},
+		{"a seen read beats later not-founds", []any{1, notFound}, 1, nil, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			read := func() (int, error) {
+			read := func(context.Context) (int, error) {
 				v := tc.seq[min(calls, len(tc.seq)-1)]
 				calls++
 				if err, ok := v.(error); ok {
@@ -104,18 +105,53 @@ func TestPollConsistent(t *testing.T) {
 	}
 }
 
+func TestPollConsistent_SlowReadIsBounded(t *testing.T) {
+	fastPolling(t)
+	calls := 0
+	read := func(ctx context.Context) (int, error) {
+		calls++
+		if calls == 1 {
+			return 1, nil // stale
+		}
+		<-ctx.Done() // a GET that would hang past the budget
+		return 0, ctx.Err()
+	}
+	start := time.Now()
+	got, err := pollConsistent(context.Background(), read, func(v int) bool { return v == 2 })
+	if got != 1 || err != nil {
+		t.Fatalf("got (%d, %v), want the stale read (1, nil)", got, err)
+	}
+	if time.Since(start) > consistencyBudget+100*time.Millisecond {
+		t.Fatalf("a hanging read overran the budget: %s", time.Since(start))
+	}
+}
+
+func TestPollConsistent_CancelIsAnError(t *testing.T) {
+	fastPolling(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	notFound := stream.Error{StatusCode: http.StatusNotFound}
+	read := func(context.Context) (int, error) {
+		cancel()
+		return 0, notFound
+	}
+	_, err := pollConsistent(ctx, read, func(int) bool { return false })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled (not a not-found that would drop the resource)", err)
+	}
+}
+
 func TestChannelTypeMatches(t *testing.T) {
 	ctx := context.Background()
 	ct := stream.NewChannelType("msg")
 	ct.MaxMessageLength = 2000
 	ct.Reactions = false
 
-	var want channelTypeResourceModel
-	if d := mapChannelTypeToModel(ctx, ct, &want); d.HasError() {
+	var written channelTypeResourceModel
+	if d := mapChannelTypeToModel(ctx, ct, &written); d.HasError() {
 		t.Fatal(d)
 	}
-	resp := &stream.GetChannelTypeResponse{ChannelType: ct}
-	if !channelTypeMatches(ctx, resp, want) {
+	want := channelTypeFingerprint(written)
+	if !channelTypeMatches(ctx, &stream.GetChannelTypeResponse{ChannelType: ct}, want) {
 		t.Fatal("identical read must match")
 	}
 

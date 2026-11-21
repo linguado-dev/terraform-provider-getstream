@@ -187,7 +187,7 @@ func (r *channelTypeResource) Create(ctx context.Context, req resource.CreateReq
 
 	resp.Diagnostics.Append(mapChannelTypeToModel(ctx, created.ChannelType, &data)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-	markWritten(ctx, resp.Private, time.Now())
+	markWritten(ctx, resp.Private, time.Now(), channelTypeFingerprint(data))
 }
 
 func (r *channelTypeResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -198,16 +198,18 @@ func (r *channelTypeResource) Read(ctx context.Context, req resource.ReadRequest
 	}
 
 	name := data.Name.ValueString()
-	read := func() (*stream.GetChannelTypeResponse, error) { return r.client.GetChannelType(ctx, name) }
+	read := func(ctx context.Context) (*stream.GetChannelTypeResponse, error) {
+		return r.client.GetChannelType(ctx, name)
+	}
 	var got *stream.GetChannelTypeResponse
 	var err error
-	if recentlyWritten(ctx, req.Private, time.Now()) {
+	if want, ok := recentWrite(ctx, req.Private, time.Now()); ok {
 		// Just written by us: wait out GetStream's replica lag before trusting a diff (#17).
 		got, err = pollConsistent(ctx, read, func(g *stream.GetChannelTypeResponse) bool {
-			return channelTypeMatches(ctx, g, data)
+			return channelTypeMatches(ctx, g, want)
 		})
 	} else {
-		got, err = read()
+		got, err = read(ctx)
 	}
 	if err != nil {
 		if isNotFound(err) {
@@ -251,7 +253,7 @@ func (r *channelTypeResource) Update(ctx context.Context, req resource.UpdateReq
 	// only mutates the fields in options, so the plan is the authoritative post-apply
 	// state.
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-	markWritten(ctx, resp.Private, time.Now())
+	markWritten(ctx, resp.Private, time.Now(), channelTypeFingerprint(data))
 }
 
 func (r *channelTypeResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -486,8 +488,8 @@ func mapChannelTypeToModel(ctx context.Context, ct *stream.ChannelType, data *ch
 	return diags
 }
 
-// channelTypeMatches reports whether an API read agrees with state on every attribute.
-func channelTypeMatches(ctx context.Context, got *stream.GetChannelTypeResponse, want channelTypeResourceModel) bool {
+// channelTypeMatches reports whether an API read has the fingerprint we wrote.
+func channelTypeMatches(ctx context.Context, got *stream.GetChannelTypeResponse, want string) bool {
 	if got == nil {
 		return false
 	}
@@ -495,17 +497,15 @@ func channelTypeMatches(ctx context.Context, got *stream.GetChannelTypeResponse,
 	if mapChannelTypeToModel(ctx, got.ChannelType, &m).HasError() {
 		return false
 	}
-	return m.Name.Equal(want.Name) &&
-		m.TypingEvents.Equal(want.TypingEvents) && m.ReadEvents.Equal(want.ReadEvents) &&
-		m.ConnectEvents.Equal(want.ConnectEvents) && m.Search.Equal(want.Search) &&
-		m.Reactions.Equal(want.Reactions) && m.Reminders.Equal(want.Reminders) &&
-		m.Replies.Equal(want.Replies) && m.Mutes.Equal(want.Mutes) &&
-		m.PushNotifications.Equal(want.PushNotifications) && m.Uploads.Equal(want.Uploads) &&
-		m.URLEnrichment.Equal(want.URLEnrichment) && m.CustomEvents.Equal(want.CustomEvents) &&
-		m.MessageRetention.Equal(want.MessageRetention) && m.MaxMessageLength.Equal(want.MaxMessageLength) &&
-		m.Automod.Equal(want.Automod) && m.AutomodBehavior.Equal(want.AutomodBehavior) &&
-		m.Blocklist.Equal(want.Blocklist) && m.BlocklistBehavior.Equal(want.BlocklistBehavior) &&
-		m.Commands.Equal(want.Commands) && m.Grants.Equal(want.Grants)
+	return channelTypeFingerprint(m) == want
+}
+
+// channelTypeFingerprint covers every attribute of the model.
+func channelTypeFingerprint(m channelTypeResourceModel) string {
+	return fingerprint(m.Name, m.TypingEvents, m.ReadEvents, m.ConnectEvents, m.Search,
+		m.Reactions, m.Reminders, m.Replies, m.Mutes, m.PushNotifications, m.Uploads,
+		m.URLEnrichment, m.CustomEvents, m.MessageRetention, m.MaxMessageLength, m.Automod,
+		m.AutomodBehavior, m.Blocklist, m.BlocklistBehavior, m.Commands, m.Grants)
 }
 
 // invalidBehaviorDiag returns a diagnostic for an unrecognized automod/blocklist
