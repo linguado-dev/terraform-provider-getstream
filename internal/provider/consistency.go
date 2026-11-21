@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -74,7 +75,8 @@ func fingerprint(vals ...attr.Value) string {
 
 // pollConsistent calls read until accept returns true or consistencyBudget runs out;
 // each read is bounded by the budget too. A not-found is retried like a stale value. On
-// exhaustion it returns the latest successful read if there was one, else the last error.
+// exhaustion it returns the latest successful read if there was one, else the last error;
+// a read cut by the budget returns its timeout rather than an earlier not-found.
 // Cancellation of ctx is returned as an error, never as a read result.
 func pollConsistent[T any](ctx context.Context, read func(context.Context) (T, error), accept func(T) bool) (T, error) {
 	var zero T
@@ -93,13 +95,10 @@ func pollConsistent[T any](ctx context.Context, read func(context.Context) (T, e
 			return zero, ctx.Err()
 		}
 		switch {
-		case pctx.Err() != nil && err != nil:
-			// This read was cut by the budget; fall back to what earlier reads saw.
+		case err != nil && errors.Is(err, context.DeadlineExceeded) && pctx.Err() != nil:
+			// This read was cut by the budget: fall back to a seen read, never to an older 404.
 			if seenOK {
 				return okVal, nil
-			}
-			if lastErr != nil {
-				return zero, lastErr
 			}
 			return zero, err
 		case err == nil && accept(v):

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -123,6 +124,40 @@ func TestPollConsistent_SlowReadIsBounded(t *testing.T) {
 	}
 	if time.Since(start) > consistencyBudget+100*time.Millisecond {
 		t.Fatalf("a hanging read overran the budget: %s", time.Since(start))
+	}
+}
+
+func TestPollConsistent_CutReadAfterNotFoundIsATimeout(t *testing.T) {
+	fastPolling(t)
+	calls := 0
+	read := func(ctx context.Context) (int, error) {
+		calls++
+		if calls == 1 {
+			return 0, stream.Error{StatusCode: http.StatusNotFound} // lagging replica
+		}
+		<-ctx.Done()
+		return 0, fmt.Errorf("get: %w", ctx.Err())
+	}
+	_, err := pollConsistent(context.Background(), read, func(int) bool { return false })
+	if isNotFound(err) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the timeout, not the earlier not-found", err)
+	}
+}
+
+func TestPollConsistent_APIErrorAtDeadlineIsReturned(t *testing.T) {
+	fastPolling(t)
+	fatal := errors.New("500 from GetStream")
+	calls := 0
+	read := func(ctx context.Context) (int, error) {
+		calls++
+		if calls == 1 {
+			return 1, nil // stale
+		}
+		<-ctx.Done()
+		return 0, fatal // an unrelated error that happens to land at the deadline
+	}
+	if _, err := pollConsistent(context.Background(), read, func(v int) bool { return v == 2 }); !errors.Is(err, fatal) {
+		t.Fatalf("err = %v, want the API error, not the earlier stale read", err)
 	}
 }
 
