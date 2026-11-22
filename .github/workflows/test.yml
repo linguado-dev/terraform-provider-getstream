@@ -69,6 +69,7 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
       - run: go test -v -cover ./internal/provider/
+      - run: make test-release-tag
 
   # Acceptance tests against the dev app. Runs on same-repo PRs and pushes to
   # exercise the full CRUD lifecycle (create/update/import/delete) before merge.

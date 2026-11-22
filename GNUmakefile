@@ -62,6 +62,19 @@ verify-creds:
 testacc:
 	TF_ACC=1 go test ./... -v $(TESTARGS) -timeout 120m
 
+# ---------------------------------------------------------------------------
+# Release
+# ---------------------------------------------------------------------------
+
+# Prints the v* tag CHANGELOG.md's top heading asks for, or nothing (tag-release.yml, #20).
+.PHONY: release-tag
+release-tag:
+	@./scripts/release-tag.sh CHANGELOG.md
+
+.PHONY: test-release-tag
+test-release-tag:
+	./scripts/release-tag_test.sh
+
 # Full pre-PR gate.
 .PHONY: check
-check: fmtcheck vet build test
+check: fmtcheck vet build test test-release-tag
