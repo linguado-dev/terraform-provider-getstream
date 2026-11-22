@@ -1,3 +1,9 @@
+## 0.3.2
+
+BUG FIXES:
+
+* resource/getstream_channel_type: a refresh right after `apply` no longer reports a spurious diff from GetStream's eventually consistent reads ([#17](https://github.com/linguado-dev/terraform-provider-getstream/issues/17)). Create and Update record the write time in private state; a Read within two minutes of it polls (bounded, about 15 seconds) until the API returns what was written, and a not-found is retried the same way. Reads after that window, and reads of imported resources, stay single-shot, so real drift shows up as before.
+
 ## 0.3.1
 
 BUG FIXES:

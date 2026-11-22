@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"time"
 
 	stream "github.com/GetStream/stream-chat-go/v6"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -186,6 +187,7 @@ func (r *channelTypeResource) Create(ctx context.Context, req resource.CreateReq
 
 	resp.Diagnostics.Append(mapChannelTypeToModel(ctx, created.ChannelType, &data)...)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	markWritten(ctx, resp.Private, time.Now(), channelTypeFingerprint(data))
 }
 
 func (r *channelTypeResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -195,7 +197,20 @@ func (r *channelTypeResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
-	got, err := r.client.GetChannelType(ctx, data.Name.ValueString())
+	name := data.Name.ValueString()
+	read := func(ctx context.Context) (*stream.GetChannelTypeResponse, error) {
+		return r.client.GetChannelType(ctx, name)
+	}
+	var got *stream.GetChannelTypeResponse
+	var err error
+	if want, ok := recentWrite(ctx, req.Private, time.Now()); ok {
+		// Just written by us: wait out GetStream's replica lag before trusting a diff (#17).
+		got, err = pollConsistent(ctx, read, func(g *stream.GetChannelTypeResponse) bool {
+			return channelTypeMatches(ctx, g, want)
+		})
+	} else {
+		got, err = read(ctx)
+	}
 	if err != nil {
 		if isNotFound(err) {
 			// The channel type was deleted out-of-band; drop it from state so
@@ -238,6 +253,7 @@ func (r *channelTypeResource) Update(ctx context.Context, req resource.UpdateReq
 	// only mutates the fields in options, so the plan is the authoritative post-apply
 	// state.
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	markWritten(ctx, resp.Private, time.Now(), channelTypeFingerprint(data))
 }
 
 func (r *channelTypeResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -470,6 +486,26 @@ func mapChannelTypeToModel(ctx context.Context, ct *stream.ChannelType, data *ch
 	data.Grants = grants
 
 	return diags
+}
+
+// channelTypeMatches reports whether an API read has the fingerprint we wrote.
+func channelTypeMatches(ctx context.Context, got *stream.GetChannelTypeResponse, want string) bool {
+	if got == nil {
+		return false
+	}
+	var m channelTypeResourceModel
+	if mapChannelTypeToModel(ctx, got.ChannelType, &m).HasError() {
+		return false
+	}
+	return channelTypeFingerprint(m) == want
+}
+
+// channelTypeFingerprint covers every attribute of the model.
+func channelTypeFingerprint(m channelTypeResourceModel) string {
+	return fingerprint(m.Name, m.TypingEvents, m.ReadEvents, m.ConnectEvents, m.Search,
+		m.Reactions, m.Reminders, m.Replies, m.Mutes, m.PushNotifications, m.Uploads,
+		m.URLEnrichment, m.CustomEvents, m.MessageRetention, m.MaxMessageLength, m.Automod,
+		m.AutomodBehavior, m.Blocklist, m.BlocklistBehavior, m.Commands, m.Grants)
 }
 
 // invalidBehaviorDiag returns a diagnostic for an unrecognized automod/blocklist
