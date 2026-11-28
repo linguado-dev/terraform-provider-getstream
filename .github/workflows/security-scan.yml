@@ -26,4 +26,4 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: linguado-dev/iam-linguado/.github/actions/scan-secrets@v2026.11.26.170910 # iam-linguado v2026.11.26.170910
+      - uses: linguado-dev/iam-linguado/.github/actions/scan-secrets@a4405b74396468a649edec119f20c36b48f604c6 # iam-linguado v2026.11.26.170910
