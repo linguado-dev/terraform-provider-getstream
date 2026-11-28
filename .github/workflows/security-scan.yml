@@ -1,0 +1,29 @@
+name: Security scan
+
+# Fails a pull request whose commits add a secret, through iam-linguado's shared
+# scan-secrets action (gitleaks, plus the org rules). "Secrets (gitleaks)" is a required
+# check, admins included, set in github-settings (iam-linguado#201,
+# linguado-backend#1271). No paths filter: a required check must report on every PR.
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: security-scan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: linguado-dev/iam-linguado/.github/actions/scan-secrets@v2026.11.26.170910 # iam-linguado v2026.11.26.170910

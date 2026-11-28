@@ -1,1 +1,2 @@
-* @hashicorp/terraform-devex
+# The infra team owns this provider (it was a leftover from the upstream fork).
+* @linguado-dev/infra
