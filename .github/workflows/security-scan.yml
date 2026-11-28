@@ -1,8 +1,7 @@
 name: Security scan
 
-# Fails a pull request whose commits add a secret, through iam-linguado's shared
-# scan-secrets action (gitleaks, plus the org rules). "Secrets (gitleaks)" is a required
-# check, admins included, set in github-settings (iam-linguado#201,
+# Fails a pull request whose commits add a secret, with gitleaks (inlined below). "Secrets
+# (gitleaks)" is a required check, admins included, set in github-settings (iam-linguado#201,
 # linguado-backend#1271). No paths filter: a required check must report on every PR.
 
 on:
@@ -26,4 +25,37 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: linguado-dev/iam-linguado/.github/actions/scan-secrets@a4405b74396468a649edec119f20c36b48f604c6 # iam-linguado v2026.11.26.170910
+      # This repo is public, and a public repo can't use an action from the private
+      # iam-linguado, so the steps of its scan-secrets action are inlined here: the same
+      # pinned binary and the same base..head range (iam-linguado#201).
+      - name: Install gitleaks (pinned by checksum)
+        env:
+          GITLEAKS_VERSION: '8.30.1'
+          GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+        run: |
+          set -euo pipefail
+          tarball="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl -fsSL --retry 3 -o "$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum --check --strict -
+          mkdir -p "$RUNNER_TEMP/gitleaks-bin"
+          tar -xzf "$tarball" -C "$RUNNER_TEMP/gitleaks-bin" gitleaks
+      - name: Scan the pull request's commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(git rev-list --min-parents=3 "${BASE_SHA}..${HEAD_SHA}")" ]; then
+            echo "::error::The PR contains an octopus merge, which this scan can't check."
+            exit 1
+          fi
+          rc=0
+          "$RUNNER_TEMP/gitleaks-bin/gitleaks" git --log-opts="--diff-merges=remerge ${BASE_SHA}..${HEAD_SHA}" \
+            --redact --verbose --no-banner --exit-code 99 . || rc=$?
+          case "$rc" in
+            0) ;;
+            99) echo "::error title=gitleaks::A commit in this PR adds what looks like a secret (values redacted above). Remove it from the branch history and rotate it." ;;
+            *) echo "::error title=gitleaks::gitleaks failed to run (exit ${rc})." ;;
+          esac
+          exit "$rc"
