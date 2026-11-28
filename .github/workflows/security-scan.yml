@@ -6,6 +6,8 @@ name: Security scan
 
 on:
   pull_request:
+    # edited: a changed base branch changes the range, so scan again.
+    types: [opened, synchronize, reopened, edited]
 
 permissions: {}
 
@@ -50,8 +52,15 @@ jobs:
             echo "::error::The PR contains an octopus merge, which this scan can't check."
             exit 1
           fi
+          # Suppressions come from the base branch, never from the PR being scanned.
+          policy="$RUNNER_TEMP/gitleaks-policy"
+          mkdir -p "$policy"
+          git show "${BASE_SHA}:.gitleaksignore" > "$policy/.gitleaksignore" 2>/dev/null || : > "$policy/.gitleaksignore"
+          git show "${BASE_SHA}:.gitleaks.toml" > "$policy/gitleaks.toml" 2>/dev/null \
+            || printf '[extend]\nuseDefault = true\n' > "$policy/gitleaks.toml"
           rc=0
           "$RUNNER_TEMP/gitleaks-bin/gitleaks" git --log-opts="--diff-merges=remerge ${BASE_SHA}..${HEAD_SHA}" \
+            --config "$policy/gitleaks.toml" --gitleaks-ignore-path "$policy/.gitleaksignore" \
             --redact --verbose --no-banner --exit-code 99 . || rc=$?
           case "$rc" in
             0) ;;
