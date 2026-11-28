@@ -1,0 +1,74 @@
+name: Security scan
+
+# Fails a pull request whose commits add a secret, with gitleaks (inlined below). "Secrets
+# (gitleaks)" is a required check, admins included, set in github-settings (iam-linguado#201,
+# linguado-backend#1271). No paths filter: a required check must report on every PR.
+
+on:
+  pull_request:
+    # edited: a changed base branch changes the range, so scan again.
+    types: [opened, synchronize, reopened, edited]
+
+permissions: {}
+
+concurrency:
+  group: security-scan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # This repo is public, and a public repo can't use an action from the private
+      # iam-linguado, so the steps of its scan-secrets action are inlined here: the same
+      # pinned binary and the same base..head range (iam-linguado#201).
+      - name: Install gitleaks (pinned by checksum)
+        env:
+          GITLEAKS_VERSION: '8.30.1'
+          GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+        run: |
+          set -euo pipefail
+          tarball="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl -fsSL --retry 3 -o "$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum --check --strict -
+          mkdir -p "$RUNNER_TEMP/gitleaks-bin"
+          tar -xzf "$tarball" -C "$RUNNER_TEMP/gitleaks-bin" gitleaks
+      - name: Scan the pull request's commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(git rev-list --min-parents=3 "${BASE_SHA}..${HEAD_SHA}")" ]; then
+            echo "::error::The PR contains an octopus merge, which this scan can't check."
+            exit 1
+          fi
+          # Suppressions come from the base branch, never from the PR being scanned.
+          policy="$RUNNER_TEMP/gitleaks-policy"
+          mkdir -p "$policy"
+          git show "${BASE_SHA}:.gitleaksignore" > "$policy/.gitleaksignore" 2>/dev/null || : > "$policy/.gitleaksignore"
+          git show "${BASE_SHA}:.gitleaks.toml" > "$policy/gitleaks.toml" 2>/dev/null \
+            || printf '[extend]\nuseDefault = true\n' > "$policy/gitleaks.toml"
+          # gitleaks also reads the checkout's own ignore file, so drop the PR's copies.
+          rm -f .gitleaksignore .gitleaks.toml
+          rc=0
+          # --text: a PR's .gitattributes (-diff) can't turn added lines into a binary change.
+          # --ignore-gitleaks-allow: an inline gitleaks:allow comment in the PR doesn't count.
+          "$RUNNER_TEMP/gitleaks-bin/gitleaks" git --log-opts="--text --diff-merges=remerge ${BASE_SHA}..${HEAD_SHA}" \
+            --config "$policy/gitleaks.toml" --gitleaks-ignore-path "$policy/.gitleaksignore" --ignore-gitleaks-allow \
+            --redact --verbose --no-banner --exit-code 99 . || rc=$?
+          case "$rc" in
+            0) ;;
+            99) echo "::error title=gitleaks::A commit in this PR adds what looks like a secret (values redacted above). Remove it from the branch history and rotate it." ;;
+            *) echo "::error title=gitleaks::gitleaks failed to run (exit ${rc})." ;;
+          esac
+          exit "$rc"
